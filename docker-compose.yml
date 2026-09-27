@@ -1,0 +1,75 @@
+# ============================================================================
+# 商标交易平台 —— 一键部署编排
+#
+# 使用方式：
+#   1. 复制 .env.example 为 .env 并修改密码/密钥
+#   2. docker compose up -d --build
+#   3. 浏览器访问 http://服务器IP:8080    后台 /admin/login  默认 admin / admin888
+#
+# 说明：Redis 未纳入编排 —— 当前仅用于图形验证码（进程内存实现），
+#       单副本部署无需 Redis；将来横向扩容多副本时再引入并改造验证码存储。
+# ============================================================================
+name: trademark-market
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: tm-mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max_allowed_packet=64M
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-trademark}
+      MYSQL_USER: ${MYSQL_USER:-tm_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-tm_pass_2026}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-rootpass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: always
+
+  backend:
+    build:
+      context: ./backend
+    image: trademark-backend:1.0.0
+    container_name: tm-backend
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-tm_user}:${MYSQL_PASSWORD:-tm_pass_2026}@mysql:3306/${MYSQL_DATABASE:-trademark}?charset=utf8mb4
+      SECRET_KEY: ${SECRET_KEY:-please-change-this-secret-key}
+      DEFAULT_ADMIN_USERNAME: ${DEFAULT_ADMIN_USERNAME:-admin}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-admin888}
+      SERIAL_PREFIX: ${SERIAL_PREFIX:-TM}
+      MAX_UPLOAD_MB: "100"
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      TZ: Asia/Shanghai
+    volumes:
+      # 图片与导入文件必须持久化，否则升级容器会丢图
+      - tm_uploads:/app/uploads
+      - tm_data:/app/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+    image: trademark-frontend:1.0.0
+    container_name: tm-frontend
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  mysql_data:
+  tm_uploads:
+  tm_data:

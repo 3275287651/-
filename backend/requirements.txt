@@ -1,0 +1,10 @@
+fastapi>=0.115.0
+uvicorn>=0.32.0
+sqlalchemy>=2.0.30
+openpyxl>=3.1.0
+pillow>=10.0.0
+python-multipart>=0.0.9
+pyjwt>=2.8.0
+# 生产环境使用 MySQL 时取消注释
+# pymysql>=1.1.1
+# cryptography>=43.0.0
