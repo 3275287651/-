@@ -32,3 +32,8 @@ _brand_logo.png
 .vscode/
 .DS_Store
 Thumbs.db
+
+# ===== 授权私钥与本地环境（绝不入库）=====
+private_keys/
+.env
+

@@ -15,7 +15,9 @@ from .config import (
 )
 from .database import Base, SessionLocal, engine
 from .models import Admin, ImportBatch, TrademarkColumn
-from .routers import admin_misc, auth, content, imports, public, quotes, submissions, trademarks
+from .routers import (
+    admin_misc, auth, content, imports, public, quotes, submissions, system, trademarks,
+)
 from .security import hash_password
 from .settings_store import ensure_defaults
 
@@ -137,6 +139,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=f"{SITE_NAME} API", version="1.0.0", lifespan=lifespan,
               docs_url="/api/docs", openapi_url="/api/openapi.json")
 
+# 纵深防护中间件：限流 → 请求签名/防重放 → 授权拦截
+# 放在 CORS 之前注册，使 CORS 成为最外层，保证 429/401/403 也带上跨域头
+from .hardening import HardeningMiddleware  # noqa: E402
+
+app.add_middleware(HardeningMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS or ["*"],
@@ -157,6 +165,7 @@ app.include_router(content.router)
 app.include_router(admin_misc.router)
 app.include_router(public.router)
 app.include_router(quotes.router)
+app.include_router(system.router)
 
 
 @app.get("/api/health")

@@ -1,16 +1,40 @@
 import axios, { type AxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
+import { buildSignedHeaders, signRequired } from '@/utils/signing'
 
 export const http = axios.create({ baseURL: '', timeout: 180000 })
 
 /** 后台用 admin_token，前台用 user_token；前台接口也允许携带用户令牌以支持收藏等 */
-http.interceptors.request.use((cfg) => {
+http.interceptors.request.use(async (cfg) => {
   const url = cfg.url || ''
   const isAdmin = url.startsWith('/api/admin')
   const token = isAdmin
     ? localStorage.getItem('admin_token')
     : localStorage.getItem('user_token') || ''
   if (token) cfg.headers.Authorization = `Bearer ${token}`
+
+  // 写操作自动附带签名头（服务端未开启校验时会忽略；详见 utils/signing.ts）
+  const method = (cfg.method || 'get').toLowerCase()
+  if (token && signRequired(method, url)) {
+    try {
+      const isForm = typeof FormData !== 'undefined' && cfg.data instanceof FormData
+      let bodyText = ''
+      if (isForm) {
+        bodyText = ''
+      } else if (typeof cfg.data === 'string') {
+        bodyText = cfg.data
+      } else if (cfg.data !== undefined && cfg.data !== null) {
+        // 先自行序列化，保证客户端哈希的字节与服务端收到的完全一致
+        bodyText = JSON.stringify(cfg.data)
+        cfg.data = bodyText
+        cfg.headers['Content-Type'] = 'application/json'
+      }
+      const headers = await buildSignedHeaders(token, method, url, bodyText, isForm)
+      if (headers) Object.assign(cfg.headers, headers)
+    } catch (e) {
+      console.warn('[签名] 计算失败，本次请求未附带签名头：', e)
+    }
+  }
   return cfg
 })
 
@@ -458,6 +482,75 @@ export const adminContentApi = {
   browse: (page = 1, pageSize = 200) =>
     get<{ total: number; items: { path: string; size: number }[] }>(
       '/api/admin/content/browse', { page, page_size: pageSize }),
+}
+
+export interface LicenseStatus {
+  enabled: boolean
+  has_key: boolean
+  valid: boolean
+  customer: string
+  expires_at: string
+  days_left: number | null
+  features: string[]
+  instance_match: boolean
+  reason: string
+  enforce: string
+  public_key_configured: boolean
+  instance_id: string
+}
+
+export interface HardeningStatus {
+  version: { version: string; build_time: string; instance_id: string }
+  rate_limit: { per_min: number; login_per_min: number; trust_proxy: boolean; tracked_ips: number }
+  signature: { mode: string; window_seconds: number; enabled: boolean; note: string }
+  license: LicenseStatus
+  anti_reverse: { frontend_obfuscation: string; backend_compiled: string; note: string }
+  upgrade: {
+    key_configured: boolean
+    staged: { name: string; size: number; megabytes: number; staged_at: string }[]
+  }
+}
+
+export interface UpgradeCheckResult {
+  ok: boolean
+  signed: boolean
+  current_version: string
+  remote_version: string
+  released_at?: string
+  notes?: string
+  images: { name?: string; tag?: string; file?: string; sha256?: string }[]
+  has_update: boolean
+  message: string
+}
+
+/** 系统与授权（仅超级管理员，版本查询除外） */
+export const adminSystemApi = {
+  version: () => get<{
+    version: string; build_time: string; instance_id: string
+    app_name: string; python: string; license_valid: boolean
+  }>('/api/admin/system/version'),
+  status: () => get<HardeningStatus>('/api/admin/system/status'),
+  saveLicense: (key: string) =>
+    put<{ ok: boolean; license: LicenseStatus; message: string }>('/api/admin/system/license', { key }),
+  clearLicense: () => del<{ ok: boolean; license: LicenseStatus }>('/api/admin/system/license'),
+  upgradeCheck: (manifest: Record<string, unknown>) =>
+    post<UpgradeCheckResult>('/api/admin/system/upgrade/check', { manifest }),
+  upgradeStage: (manifest: Record<string, unknown>, file: File) => {
+    const fd = new FormData()
+    fd.append('manifest_json', JSON.stringify(manifest))
+    fd.append('file', file)
+    return http.post<{
+      ok: boolean
+      staged: { name: string; sha256: string; megabytes: number }
+      version: string
+      commands: string[]
+      message: string
+    }>('/api/admin/system/upgrade/stage', fd).then((r) => r.data)
+  },
+  deleteStaged: (name: string) =>
+    del<{ ok: boolean; staged: HardeningStatus['upgrade']['staged'] }>(
+      `/api/admin/system/upgrade/staged/${encodeURIComponent(name)}`),
+  restart: () => post<{ ok: boolean; message: string }>('/api/admin/system/restart'),
 }
 
 export function fileUrl(url?: string | null) {

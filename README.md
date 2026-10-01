@@ -55,9 +55,9 @@
 
 ### 5.1 单镜像（推荐：载入即用，无需 MySQL）
 
-镜像包：`release/trademark-market-1.0.1.tar`（当前版本，含客户寄售、内容迁移、网页头品牌化）。
-镜像 `trademark-market:1.0.1` 为**前后端一体**：内置 SQLite 数据库，前端静态资源由后端同端口托管，不依赖 MySQL / Redis / Nginx，一条 `docker run` 就能用。
-（`release/trademark-market-1.0.0.tar` 是上一版，保留用于回滚。）
+镜像包：`release/trademark-market-1.0.3.tar`（当前版本，含客户寄售、内容迁移、网页头品牌化、纵深防护与授权升级链路）。
+镜像 `trademark-market:1.0.3` 为**前后端一体**：内置 SQLite 数据库，前端静态资源由后端同端口托管，不依赖 MySQL / Redis / Nginx，一条 `docker run` 就能用。
+（`release/trademark-market-1.0.2.tar`、`1.0.0.tar` 为历史版本，保留用于回滚。）
 
 **方式一：双击 `载入镜像并启动.bat`** —— 自动完成「载入镜像 → 启动容器 → 打开浏览器」，并在镜像已存在时跳过重复载入。
 
@@ -193,19 +193,27 @@ docker run --rm -v trademark-market_tm_uploads:/data -v $(pwd):/backup alpine ta
 │  │  ├─ exporter.py        导出（编号前置、图样内嵌可选）
 │  │  ├─ serial.py          唯一编号生成器 TM-YYYYMMDD-NNNN
 │  │  ├─ models.py          数据模型（双编号 / 可空金额 / extra 动态列 / 寄售来源与审核）
-│  │  └─ routers/           认证、商标、导入、寄售提交与审核、内容包、前台、报价单、后台杂项
+│  │  ├─ hardening.py       纵深防护：限流 / 请求签名与防重放 / 实例指纹 / 授权校验
+│  │  └─ routers/           认证、商标、导入、寄售提交与审核、内容包、系统与授权、前台、报价单、后台杂项
+│  ├─ tools/                厂商侧工具（不随镜像交付）
+│  │  ├─ license_gen.py     生成密钥对 / 签发授权码 / 校验授权码
+│  │  └─ upgrade_sign.py    生成并签名升级清单
 │  ├─ e2e_check.py          真实数据端到端自测（导入/双编号/检索/批量操作/导出）
 │  ├─ e2e_dynamic.py        动态列 + 去重 + 覆盖更新自测
 │  ├─ e2e_submission.py     客户寄售全链路 + 内容包导入导出自测
+│  ├─ e2e_hardening.py      限流 / 授权码（篡改·过期·换机）/ 升级清单签名自测
+│  ├─ e2e_signature.py      请求签名与防重放自测（需 SIGN_MODE=write 启动）
 │  └─ container_check.py    容器实例业务验收（对已运行容器跑一遍完整流程）
 │                            container_check_v11.py 额外覆盖寄售审核、内容包、网页头配置
+├─ private_keys/            授权私钥目录（已 .gitignore 排除，务必离线备份）
 ├─ frontend/                Vue3 + Vite + TS + Element Plus
 │  └─ src/
-│     ├─ admin/             后台页面（含 SubmissionReview 寄售审核、ContentTransfer 内容迁移）
+│     ├─ admin/             后台页面（含 SubmissionReview 寄售审核、ContentTransfer 内容迁移、SystemInfo 系统与授权）
 │     ├─ site/              前台页面（含 SellSubmission 我要卖标）
 │     ├─ utils/branding.ts  网页头品牌化（标题 + favicon）
+│     └─ utils/signing.ts   请求签名（Web Crypto HMAC-SHA256 + nonce 防重放）
 ├─ Dockerfile               单镜像构建（前端构建 → 后端一体，内置 SQLite）
-├─ release/                 导出的镜像包：trademark-market-1.0.1.tar（当前）、1.0.0.tar（回滚用）
+├─ release/                 导出的镜像包：trademark-market-1.0.3.tar（当前）、1.0.2 / 1.0.0（回滚用）
 ├─ 载入镜像并启动.bat        一键：docker load + docker run + 打开浏览器
 ├─ docker-compose.yml       多容器编排（MySQL + Nginx），见 5.2
 └─ 启动后端.bat / 启动前端.bat   本地开发用（不需要 Docker）
@@ -222,14 +230,122 @@ docker run --rm -v trademark-market_tm_uploads:/data -v $(pwd):/backup alpine ta
 | `UPLOAD_DIR` / `DATA_DIR` | backend 下 | 图片与数据目录，容器内映射到数据卷 |
 | `MAX_UPLOAD_MB` | 100 | 单文件上传上限 |
 | `CORS_ORIGINS` | 本地端口 | 前后端不同域时填写前端地址 |
+| `APP_VERSION` / `BUILD_TIME` | 1.0.3 / 空 | 版本与构建时间，后台「系统与授权」页展示 |
+| `UPGRADE_KEY` | 空 | 升级清单 HMAC 签名密钥；不配则无法校验升级包 |
+| `TRUST_PROXY` | `false` | 反向代理（Nginx / 瑞数）后面部署时置 `true`，才信任 `X-Forwarded-For` |
+| `RATE_LIMIT_PER_MIN` / `RATE_LIMIT_LOGIN_PER_MIN` | 600 / 30 | 单 IP 每分钟请求上限（普通接口 / 验证码注册登录） |
+| `SIGN_MODE` | `off` | 请求签名与防重放：`off` / `write`（仅写操作）/ `all`；**启用后必须 HTTPS** |
+| `SIGN_WINDOW_SECONDS` | 300 | 签名时间戳允许漂移窗口（秒） |
+| `LICENSE_PUBLIC_KEY` | 空 | 授权公钥（hex 或 base64）；不配则授权模块不启用 |
+| `LICENSE_ENFORCE` | `warn` | 超期处理：`warn` / `block_admin_write` / `block_all` |
 
-## 十、已知边界与后续建议
+## 十、安全、授权与升级（防逆向 / 防爬 / 升级链路）
+
+### 10.1 先说清楚能力边界（不夸大）
+
+- **前端代码无法真正保密**：JS 最终要在浏览器里执行，混淆只能提高读代码门槛，不能"防止逆向"。
+- **后端也是**：只要把镜像交付出去，`docker save` 解包就能看到源码 —— 所以最有效的保护是**SaaS 自营交付**（代码与数据都不出你的服务器）。
+- 本系统提供的是**抬高门槛 + 防滥用**的组合：能挡住脚本化抓取、批量爬取、请求重放、伪造升级包；挡不住有资源、有耐心的定向破解。
+- 「防逆向（保护代码）」与「防爬（保护数据）」是两件不同的事，下面的措施分别对应。
+
+### 10.2 已实现（四层，按需开启）
+
+| 层 | 内容 | 开启方式 | 默认 |
+|---|---|---|---|
+| 1. 限流 | 单 IP 滑动窗口：普通接口 600/分，凭证类接口 30/分，超限返回 429 并带 `Retry-After` | `RATE_LIMIT_PER_MIN` / `RATE_LIMIT_LOGIN_PER_MIN` | **开启** |
+| 2. 请求签名 + 防重放 | 写操作必须带 `X-TS` / `X-Nonce` / `X-Sign`（HMAC-SHA256，密钥=登录令牌，签名覆盖 `方法+路径+时间戳+nonce+请求体摘要`），5 分钟时间窗 + nonce 一次性 | `SIGN_MODE=write`（或 `all`） | 关闭 |
+| 3. 授权（License） | Ed25519 非对称签名授权码，可绑定实例指纹、带到期时间；超期可只提示或直接拦截 | `LICENSE_PUBLIC_KEY` + `LICENSE_ENFORCE` | 仅提示 |
+| 4. 升级链路 | 升级清单 HMAC 签名 + 升级包 sha256 校验，通过后才暂存并给出应用命令 | `UPGRADE_KEY` | 未配置 |
+
+另外还做了：关闭 uvicorn 指纹（`--no-server-header`）、`X-Content-Type-Options` / `Referrer-Policy` 响应头、运营账户与操作日志不进内容包、`.gitignore` 排除运行数据与私钥。
+
+**启用第 2 层前请注意**：签名的密钥是登录令牌，需要浏览器具备 Web Crypto —— 只有 HTTPS（或 localhost）可用；同时任何第三方对接方（含自带脚本）也要按同一规则签名。建议先 `SIGN_MODE=off` 跑通业务，上线 HTTPS 后再切 `write`。
+
+### 10.3 授权码：怎么签发、怎么生效
+
+```bash
+# ① 厂商侧（只在你这里执行一次）：生成密钥对
+python tools/license_gen.py init
+#   → 私钥写到 private_keys/license_private.pem（已被 .gitignore 排除，务必离线备份）
+#   → 打印公钥 hex，填进实例环境变量 LICENSE_PUBLIC_KEY
+
+# ② 客户实例启动时带上公钥
+docker run ... -e LICENSE_PUBLIC_KEY=<公钥hex> -e LICENSE_ENFORCE=block_admin_write ...
+
+# ③ 客户在后台「系统与授权」页复制实例指纹给你，你签发授权码
+python tools/license_gen.py issue --customer "某某公司" --expires 2027-12-31 --instance <实例指纹>
+#   不带 --instance 则绑定为 *（不限实例）
+
+# ④ 客户把授权码粘到后台「系统与授权 → 授权码」保存即可
+```
+
+要点：**私钥永远不出你的电脑**，客户实例里只有公钥，所以即使客户拿到镜像源码也签不出新授权码。想收回授权就让授权码到期，或把 `LICENSE_ENFORCE` 切到拦截档。
+
+### 10.4 升级：怎么发版、客户怎么升
+
+```bash
+# ① 厂商侧：构建并导出新镜像
+docker build --provenance=false --sbom=false --build-arg APP_VERSION=1.0.4 \
+  -t trademark-market:1.0.4 .
+docker save -o release/trademark-market-1.0.4.tar trademark-market:1.0.4
+
+# ② 生成并签名升级清单（需设置 UPGRADE_KEY，与客户实例一致）
+set UPGRADE_KEY=你的升级密钥
+python tools/upgrade_sign.py --version 1.0.4 --file ../release/trademark-market-1.0.4.tar \
+  --tag 1.0.4 --notes "修复若干问题"
+#   → 输出一段 JSON
+
+# ③ 客户后台「系统与授权 → 升级」：粘贴清单 → 校验 → 上传 tar → 得到应用命令
+docker load -i data/upgrades/trademark-market-1.0.4.tar
+docker rm -f trademark && docker run -d --name trademark -p 8080:8000 \
+  -v trademark-data:/app/data -v trademark-uploads:/app/uploads \
+  --restart=always trademark-market:1.0.4
+```
+
+刻意**不做"一键静默替换自身代码"**：那种设计一旦被投毒就是整个站点失守。现在的做法是"验签 + 落盘 + 给人执行命令"，安全边界清晰。数据都在数据卷里，换镜像不会丢。
+
+### 10.5 前端混淆与后端二进制化
+
+```bash
+# 前端混淆（默认开启，构建时生效）
+OBFS_ENABLE=true npx vite build      # 关闭：OBFS_ENABLE=false
+#   实测：33 个业务 chunk 870KB → 920KB，第三方大包（>400KB）不混淆以保证兼容与构建速度
+
+# 后端二进制化（可选镜像，镜像内不含明文 .py）
+docker build --target hardened -t trademark-market:1.0.3-hardened .
+```
+
+混淆配置刻意保守（不开 `selfDefending` / `debugProtection`，避免破坏运行与排障）；只混淆业务代码，不动第三方库。
+
+### 10.6 如果采购了瑞数（或其它动态防护/WAF）
+
+瑞数是**按授权收费的商业产品**，部署形态一般是反向代理或云防护，不在应用代码里。接入时只需保证两件事：
+
+```nginx
+# Nginx 在瑞数之后（或瑞数云防护回源到你）时：把真实客户端 IP 透传进来
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;   # 瑞数会填真实客户端 IP
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+同时把实例的 `TRUST_PROXY=true`（这样限流按真实 IP 计算，而不是把瑞数的出口 IP 当成所有人）。瑞数自身的 JS 挑战、动态 token 由它在边缘完成，不需要改业务代码。
+
+**采购时建议向瑞数确认这几点**：按域名还是按实例授权、是否支持你这种"后端 API + SPA"结构、回源时真实 IP 放在哪个头（`X-Forwarded-For` / 自定义头）、以及是否提供源站白名单（只允许瑞数回源）。
+
+## 十一、已知边界与后续建议
 
 1. 导入为单进程后台任务（进度可轮询）。当前 935 件 + 935 张图约 3 秒；若单批上万件，建议接入 Celery 队列分片处理。
 2. 图形验证码为进程内存实现，多副本部署前需换成 Redis。
 3. 报价单导出提供 Excel；PDF 需额外引入 WeasyPrint 或前端打印样式（未实现）。
 4. 未实现：邮件通知（SMTP）、浏览历史、图片自动压缩与水印、SEO 服务端预渲染。前台为 SPA，若需要搜索引擎收录详情页，建议后续加预渲染或 SSR。
 5. 前台页面为客户端渲染，首屏数据接口已合并（首页一次返回 config/banners/featured/latest/categories/stats），减少请求数。
+6. 限流与 nonce 防重放都是**进程内存**实现（与图形验证码同理）：单实例足够，多副本部署前需换成 Redis；否则每个副本各算一份额度。
+7. 授权与升级校验依赖环境变量中的密钥/公钥：密钥丢失可重新 `init` 并重新签发（公钥随之更换，旧授权码会失效），因此**私钥与 `UPGRADE_KEY` 请离线备份**。
+8. 请求签名（`SIGN_MODE`）启用后，任何不签名的对接方（含自带脚本）都会被拒；对外提供 API 时建议单独开一条只读通道，而不是关闭签名。
 
 ---
 

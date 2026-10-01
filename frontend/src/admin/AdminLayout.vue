@@ -54,6 +54,9 @@
         <el-menu-item v-if="admin.isSuper" index="/admin/content">
           <el-icon><FolderOpened /></el-icon><template #title>内容迁移</template>
         </el-menu-item>
+        <el-menu-item v-if="admin.isSuper" index="/admin/system">
+          <el-icon><Cpu /></el-icon><template #title>系统与授权</template>
+        </el-menu-item>
         <el-menu-item v-if="admin.isSuper" index="/admin/logs">
           <el-icon><Document /></el-icon><template #title>操作日志</template>
         </el-menu-item>
@@ -135,6 +138,7 @@ const TITLES: Record<string, string> = {
   '/admin/trademarks/new': '新增商标',
   '/admin/submissions': '寄售审核',
   '/admin/content': '内容迁移',
+  '/admin/system': '系统与授权',
   '/admin/customers': '客户管理',
   '/admin/quotes': '报价单管理',
   '/admin/expiring': '商标到期提醒',

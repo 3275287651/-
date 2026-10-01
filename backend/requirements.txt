@@ -5,6 +5,7 @@ openpyxl>=3.1.0
 pillow>=10.0.0
 python-multipart>=0.0.9
 pyjwt>=2.8.0
+# 授权码 Ed25519 签名校验（LICENSE_PUBLIC_KEY）
+cryptography>=42.0.0
 # 生产环境使用 MySQL 时取消注释
 # pymysql>=1.1.1
-# cryptography>=43.0.0

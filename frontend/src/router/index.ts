@@ -41,6 +41,7 @@ const router = createRouter({
         { path: 'trademarks/:id/edit', name: 'admin-tm-edit', component: () => import('@/admin/TrademarkForm.vue'), meta: { title: '编辑商标' } },
         { path: 'submissions', name: 'admin-submissions', component: () => import('@/admin/SubmissionReview.vue'), meta: { title: '寄售审核' } },
         { path: 'content', name: 'admin-content', component: () => import('@/admin/ContentTransfer.vue'), meta: { title: '内容迁移' } },
+        { path: 'system', name: 'admin-system', component: () => import('@/admin/SystemInfo.vue'), meta: { title: '系统与授权' } },
         { path: 'customers', name: 'admin-customers', component: () => import('@/admin/Customers.vue'), meta: { title: '客户管理' } },
         { path: 'quotes', name: 'admin-quotes', component: () => import('@/admin/Quotes.vue'), meta: { title: '报价单管理' } },
         { path: 'expiring', name: 'admin-expiring', component: () => import('@/admin/Expiring.vue'), meta: { title: '到期提醒' } },
