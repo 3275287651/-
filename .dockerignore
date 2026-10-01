@@ -1,0 +1,18 @@
+# 构建上下文瘦身：这些都是运行期数据或本地产物，镜像里不需要，也避免每次 build 传输近 900MB
+.git
+.gitignore
+release
+private_keys
+.env
+*.log
+*.tar
+
+# 前端：容器内会重新 npm install 与 vite build
+frontend/node_modules
+frontend/dist
+
+# 后端：数据、图样与缓存由数据卷提供
+backend/data
+backend/uploads
+**/__pycache__
+**/*.pyc

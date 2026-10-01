@@ -73,7 +73,7 @@
       <el-tab-pane label="我的报价单" name="quotes">
         <div v-loading="quoteLoading">
           <div v-if="quotes.length" class="table-scroll">
-            <table class="quote-table">
+            <table class="quote-table table-cards">
               <thead>
                 <tr>
                   <th>报价单号</th>
@@ -89,17 +89,17 @@
               </thead>
               <tbody>
                 <tr v-for="q in quotes" :key="q.id">
-                  <td class="mono-id">{{ q.quote_no }}</td>
-                  <td>{{ q.title }}</td>
-                  <td class="ta-right num">{{ q.item_count }}</td>
-                  <td class="ta-right num">¥{{ q.total_quote.toLocaleString() }}</td>
-                  <td>
+                  <td data-label="" class="mono-id">{{ q.quote_no }}</td>
+                  <td data-label="标题">{{ q.title }}</td>
+                  <td data-label="商标数" class="ta-right num">{{ q.item_count }}</td>
+                  <td data-label="报价合计" class="ta-right num">¥{{ q.total_quote.toLocaleString() }}</td>
+                  <td data-label="状态">
                     <el-tag :type="statusType(q.status)" effect="light" size="small">{{ statusLabel(q.status) }}</el-tag>
                   </td>
-                  <td>{{ q.expire_at || '长期' }}</td>
-                  <td class="ta-right num">{{ q.view_count }}</td>
-                  <td>{{ q.created_at }}</td>
-                  <td class="ta-center quote-ops">
+                  <td data-label="有效期至">{{ q.expire_at || '长期' }}</td>
+                  <td data-label="访问" class="ta-right num">{{ q.view_count }}</td>
+                  <td data-label="生成时间">{{ q.created_at }}</td>
+                  <td data-label="操作" class="ta-center quote-ops">
                     <el-button link type="primary" @click="$router.push(`/quote/${q.token}`)">查看</el-button>
                     <el-button link @click="copyShare(q.token)">复制链接</el-button>
                     <el-button link @click="exportQuote(q)">导出</el-button>
@@ -698,6 +698,39 @@ onMounted(() => {
   }
   .fav-main {
     flex-basis: calc(100% - 120px);
+  }
+}
+@media (max-width: 620px) {
+  /* 标签页挤不下时缩小内边距，避免溢出 */
+  .uc-tabs :deep(.el-tabs__item) {
+    padding: 0 10px;
+    font-size: var(--text-base);
+  }
+  /* 收藏行改为三段：勾选+缩略图 / 名称信息 / 价格+操作 */
+  .fav-row {
+    gap: var(--space-3);
+  }
+  .fav-main {
+    flex-basis: 100%;
+    order: 2;
+  }
+  .fav-price {
+    order: 3;
+  }
+  .fav-actions {
+    order: 4;
+    margin-left: auto;
+  }
+  .fav-actions :deep(.el-button) {
+    min-height: 36px;
+  }
+  .fav-toolbar {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .fav-toolbar :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
   }
 }
 </style>

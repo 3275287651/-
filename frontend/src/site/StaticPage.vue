@@ -299,4 +299,25 @@ onMounted(ensureSiteConfig)
     min-height: 46px;
   }
 }
+@media (max-width: 620px) {
+  .contact-wx strong {
+    font-size: var(--text-xl);
+    word-break: break-all;
+  }
+  .contact-qr {
+    width: 150px;
+    height: 150px;
+  }
+  .map-placeholder {
+    height: 170px;
+  }
+  .timeline__item {
+    gap: var(--space-3);
+    padding-left: var(--space-4);
+    margin-left: var(--space-2);
+  }
+  .info-row {
+    gap: var(--space-3);
+  }
+}
 </style>

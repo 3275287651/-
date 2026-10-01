@@ -36,7 +36,7 @@ export function ensureSiteConfig(force = false): Promise<SiteConfig> {
           <img v-if="config?.logo_url" :src="config.logo_url" :alt="`${config?.site_name || '商标交易平台'} Logo`" class="site-logo__img" />
           <span v-else class="site-logo__mark">尚</span>
           <span class="site-logo__text">
-            <strong>{{ config?.site_name || '尚标易 · 商标交易平台' }}</strong>
+            <strong :title="config?.site_name || ''">{{ brandName }}</strong>
             <span>{{ config?.site_subtitle || '精选现成商标 · 即买即用' }}</span>
           </span>
         </router-link>
@@ -58,7 +58,7 @@ export function ensureSiteConfig(force = false): Promise<SiteConfig> {
         <div class="site-header__actions">
           <button class="cart-pill" type="button" @click="router.push('/cart')">
             <el-icon><ShoppingCart /></el-icon>
-            报价单 <b>{{ user.cartCount }}</b>
+            <span class="cart-pill__label">报价单</span> <b>{{ user.cartCount }}</b>
           </button>
 
           <el-dropdown v-if="user.isLoggedIn" trigger="click" @command="onUserCommand">
@@ -136,7 +136,12 @@ export function ensureSiteConfig(force = false): Promise<SiteConfig> {
       </div>
     </footer>
 
-    <el-drawer v-model="drawer" title="导航菜单" direction="rtl" size="72%">
+    <el-drawer v-model="drawer" title="导航菜单" direction="rtl" size="78%">
+      <form class="drawer-search" role="search" @submit.prevent="onSearch">
+        <el-input v-model="keyword" placeholder="搜索商标名 / 注册号" clearable aria-label="搜索商标">
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
+      </form>
       <nav class="drawer-nav">
         <router-link v-for="item in navItems" :key="item.path" :to="item.path" @click="drawer = false">
           {{ item.label }}
@@ -157,7 +162,7 @@ export function ensureSiteConfig(force = false): Promise<SiteConfig> {
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, CopyDocument, Menu, Search, ShoppingCart, User } from '@element-plus/icons-vue'
@@ -186,7 +191,23 @@ const navItems = [
 
 const currentRedirect = computed(() => route.fullPath)
 
+/**
+ * 手机端页头宽度只够放下「短站名」：站点名常形如「尚标易 · 商标交易平台」，
+ * 直接渲染会被省略号截成「尚标易 · 商标交易…」，所以窄屏只取分隔符前的部分。
+ */
+const narrow = ref(false)
+function syncNarrow() {
+  narrow.value = window.innerWidth <= 620
+}
+const brandName = computed(() => {
+  const full = config.value?.site_name || '尚标易 · 商标交易平台'
+  if (!narrow.value) return full
+  const short = full.split(/[·•|｜\-—/]/)[0]?.trim()
+  return short && short.length >= 2 ? short : full
+})
+
 function onSearch() {
+  drawer.value = false
   const q = keyword.value.trim()
   router.push(q ? { path: '/trademarks', query: { q } } : { path: '/trademarks' })
 }
@@ -215,12 +236,16 @@ function copyWechat() {
 }
 
 onMounted(async () => {
+  syncNarrow()
+  window.addEventListener('resize', syncNarrow)
   // 强制拉一次最新配置：后台随时可能改了站点名称/Logo/图标，
   // 网页头（title + favicon）必须跟着变，不能吃旧缓存
   await ensureSiteConfig(true)
   applyBranding(config.value)
   if (user.isLoggedIn) await user.loadFavorites()
 })
+
+onUnmounted(() => window.removeEventListener('resize', syncNarrow))
 </script>
 
 <style scoped>
@@ -287,6 +312,9 @@ onMounted(async () => {
   align-items: center;
   gap: var(--space-2);
 }
+.drawer-search {
+  margin-bottom: var(--space-3);
+}
 .drawer-nav {
   display: flex;
   flex-direction: column;
@@ -315,10 +343,55 @@ onMounted(async () => {
   .header-search {
     display: none;
   }
+  /* 导航与搜索隐藏后，右侧动作区靠 auto 外边距顶到最右 */
+  .site-header__actions {
+    margin-left: auto;
+    gap: var(--space-2);
+  }
   .nav-toggle {
-    display: block;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    margin-right: -8px;
   }
   .user-chip__name {
+    display: none;
+  }
+  /* 站名允许占满剩余空间，放不下时省略，绝不把购物车/汉堡挤出屏幕 */
+  .site-logo {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .site-logo__text {
+    min-width: 0;
+  }
+  .site-logo__text strong {
+    display: block;
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .site-logo__text span {
+    display: none;
+  }
+}
+@media (max-width: 620px) {
+  /* 此处 brandName 已收敛为短站名，宽度充裕 */
+  .site-logo__text strong {
+    max-width: none;
+  }
+  .cart-pill__label {
+    display: none;
+  }
+  .cart-pill {
+    padding: 8px 12px;
+    min-height: 38px;
+  }
+  /* 登录/注册在抽屉里已有入口，窄屏让位给品牌名与购物车 */
+  .header-login,
+  .header-register {
     display: none;
   }
 }

@@ -91,7 +91,8 @@
           :current-page="page"
           :page-size="pageSize"
           :total="total"
-          layout="prev, pager, next, jumper"
+          :layout="pagerLayout"
+          :pager-count="5"
           background
           @current-change="onPageChange"
         />
@@ -124,7 +125,7 @@ import { ensureSiteConfig, siteConfig } from './SiteLayout.vue'
 </script>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ChatDotRound, CopyDocument, RefreshLeft, Search } from '@element-plus/icons-vue'
@@ -168,6 +169,12 @@ const query = reactive({
 })
 
 let lastSig = ''
+
+// 窄屏去掉「跳页输入框」，否则分页条会挤出行外
+const pagerLayout = ref('prev, pager, next, jumper')
+function syncPagerLayout() {
+  pagerLayout.value = window.innerWidth <= 620 ? 'prev, pager, next' : 'prev, pager, next, jumper'
+}
 
 function buildQuery(): Record<string, string> {
   const q: Record<string, string> = {}
@@ -288,7 +295,11 @@ onMounted(() => {
   readQuery()
   load()
   ensureSiteConfig()
+  syncPagerLayout()
+  window.addEventListener('resize', syncPagerLayout)
 })
+
+onUnmounted(() => window.removeEventListener('resize', syncPagerLayout))
 </script>
 
 <style scoped>
@@ -354,12 +365,39 @@ onMounted(() => {
   margin: 0;
 }
 @media (max-width: 820px) {
-  .filter-search,
+  /* 搜索框与排序各自与相邻按钮同排，避免按钮被挤到下一行 */
+  .filter-search {
+    flex: 1 1 160px;
+    width: auto;
+  }
+  .filter-sort {
+    flex: 1 1 140px;
+    width: auto;
+  }
   .filter-date {
     width: 100%;
   }
-  .filter-sort {
-    width: 140px;
+  .filter-spacer {
+    display: none;
+  }
+}
+@media (max-width: 620px) {
+  .filter-row {
+    gap: var(--space-2);
+  }
+  .filter-row__label {
+    min-width: 44px;
+  }
+  .empty-actions {
+    flex-direction: column;
+  }
+  .empty-actions :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+    min-height: 46px;
+  }
+  .pager {
+    margin-top: var(--space-5);
   }
 }
 </style>

@@ -57,7 +57,7 @@
           </div>
 
           <div class="table-scroll">
-            <table class="quote-table">
+            <table class="quote-table table-cards">
               <thead>
                 <tr>
                   <th>图样</th>
@@ -71,7 +71,7 @@
               </thead>
               <tbody>
                 <tr v-for="item in quote.items || []" :key="item.trademark_id">
-                  <td>
+                  <td data-label="">
                     <el-image
                       v-if="item.image"
                       :src="item.image"
@@ -83,14 +83,14 @@
                     />
                     <div v-else class="cell-thumb cell-thumb--empty">暂无图样</div>
                   </td>
-                  <td class="cell-name">{{ item.name }}</td>
-                  <td>{{ item.category ? `${item.category}类` : '—' }}</td>
-                  <td class="mono-id">{{ item.trademark_no || '—' }}</td>
-                  <td class="ta-right num">{{ money(item.original_price) }}</td>
-                  <td class="ta-right num">
+                  <td data-label="商标名" class="cell-name">{{ item.name }}</td>
+                  <td data-label="类别">{{ item.category ? `${item.category}类` : '—' }}</td>
+                  <td data-label="注册号" class="mono-id">{{ item.trademark_no || '—' }}</td>
+                  <td data-label="原价" class="ta-right num">{{ money(item.original_price) }}</td>
+                  <td data-label="报价" class="ta-right num">
                     <span :class="{ 'quote-strong': item.quote_price !== null }">{{ money(item.quote_price) }}</span>
                   </td>
-                  <td class="ta-right num">{{ subtotal(item) }}</td>
+                  <td data-label="小计" class="ta-right num">{{ subtotal(item) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -395,12 +395,52 @@ onMounted(() => {
   .share-main {
     padding: var(--space-5) var(--space-4);
   }
+  .share-header__inner {
+    height: 60px;
+    padding: var(--space-3) var(--space-4);
+  }
   .quote-summary {
     align-items: stretch;
   }
   .quote-summary__row,
   .quote-summary__total {
     justify-content: space-between;
+    gap: var(--space-4);
+  }
+}
+@media (max-width: 620px) {
+  /* 站名过长会把「浏览全部商标」挤出屏幕，压缩品牌区并省略 */
+  .site-logo__text span {
+    display: none;
+  }
+  .site-logo__text strong {
+    display: block;
+    font-size: var(--text-base);
+    max-width: 116px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .share-header__inner {
+    height: auto;
+    min-height: 60px;
+    padding-top: env(safe-area-inset-top);
+  }
+  .share-main {
+    padding-left: max(var(--space-4), env(safe-area-inset-left));
+    padding-right: max(var(--space-4), env(safe-area-inset-right));
+  }
+  .share-footer__inner {
+    padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
+  }
+  .quote-head :deep(.el-button) {
+    width: 100%;
+    min-height: 44px;
+  }
+  .password-card {
+    margin: var(--space-6) auto;
+  }
+  .contact-card {
     gap: var(--space-4);
   }
 }

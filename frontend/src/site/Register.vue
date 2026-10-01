@@ -148,4 +148,20 @@ onMounted(loadCaptcha)
   gap: var(--space-2);
   justify-content: center;
 }
+/* 本页不在 .site-container 里，手机上需自行补页边距，否则卡片会贴到屏幕边缘 */
+@media (max-width: 820px) {
+  .auth-page {
+    padding: var(--space-5) max(var(--space-4), env(safe-area-inset-left)) var(--space-6)
+      max(var(--space-4), env(safe-area-inset-right));
+  }
+  .auth-card {
+    padding: var(--space-6);
+  }
+  .full {
+    min-height: 46px;
+  }
+  .captcha-img {
+    height: 44px;
+  }
+}
 </style>

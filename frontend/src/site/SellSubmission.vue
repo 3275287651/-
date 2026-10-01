@@ -652,4 +652,29 @@ function goMySubmissions() {
     width: 100%;
   }
 }
+@media (max-width: 620px) {
+  .sell-hero {
+    padding: var(--space-4);
+    gap: var(--space-3);
+  }
+  .sell-hero__icon {
+    font-size: 28px;
+  }
+  /* 承诺勾选 + 提交按钮改为纵向满宽，避免互相挤压 */
+  .submit-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .commit-check {
+    min-width: 0;
+  }
+  .upload-thumb,
+  .upload-box {
+    width: 86px;
+    height: 86px;
+  }
+  .upload-drop {
+    min-width: 0;
+  }
+}
 </style>

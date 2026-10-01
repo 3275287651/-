@@ -364,4 +364,22 @@ onMounted(load)
     margin-left: 0;
   }
 }
+@media (max-width: 620px) {
+  .detail-gallery {
+    padding: var(--space-4);
+  }
+  .detail-gallery__main {
+    height: 240px;
+  }
+  .detail-gallery__empty {
+    height: 200px;
+  }
+  .detail-name {
+    font-size: var(--text-xl);
+  }
+  .thumb {
+    width: 48px;
+    height: 48px;
+  }
+}
 </style>

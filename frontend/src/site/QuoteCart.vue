@@ -6,7 +6,7 @@
     <template v-if="user.cart.length">
       <div class="panel-card panel-card--flush">
         <div class="table-scroll">
-          <table class="quote-table">
+          <table class="quote-table table-cards">
             <thead>
               <tr>
                 <th>图样</th>
@@ -21,7 +21,7 @@
             </thead>
             <tbody>
               <tr v-for="item in user.cart" :key="item.trademark_id">
-                <td>
+                <td data-label="">
                   <el-image
                     v-if="item.image"
                     :src="item.image"
@@ -33,13 +33,15 @@
                   />
                   <div v-else class="cell-thumb cell-thumb--empty">暂无图样</div>
                 </td>
-                <td>
+                <td data-label="商标名">
                   <router-link :to="`/trademark/${item.trademark_id}`" class="cell-name">{{ item.name }}</router-link>
                 </td>
-                <td>{{ item.category ? `${item.category}类` : '—' }}</td>
-                <td class="mono-id">{{ item.trademark_no || '—' }}</td>
-                <td class="ta-right num">{{ item.price !== null ? `¥${item.price.toLocaleString()}` : '面议' }}</td>
-                <td class="ta-right">
+                <td data-label="类别">{{ item.category ? `${item.category}类` : '—' }}</td>
+                <td data-label="注册号" class="mono-id">{{ item.trademark_no || '—' }}</td>
+                <td data-label="标价" class="ta-right num">
+                  {{ item.price !== null ? `¥${item.price.toLocaleString()}` : '面议' }}
+                </td>
+                <td data-label="报价" class="ta-right">
                   <div v-if="item.price !== null" class="quote-input">
                     <el-input-number
                       :model-value="item.quote_price ?? item.price"
@@ -55,8 +57,8 @@
                     <span class="na-hint">该标无公开价，请在备注中说明需求</span>
                   </div>
                 </td>
-                <td class="ta-right num">{{ subtotalText(item) }}</td>
-                <td class="ta-center">
+                <td data-label="小计" class="ta-right num">{{ subtotalText(item) }}</td>
+                <td data-label="操作" class="ta-center">
                   <el-button link type="danger" :icon="Delete" @click="removeItem(item.trademark_id, item.name)">
                     移除
                   </el-button>

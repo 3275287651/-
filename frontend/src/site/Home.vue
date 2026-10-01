@@ -49,7 +49,7 @@
 
     <div class="site-container">
       <!-- 轮播（无 banner 时整块隐藏） -->
-      <el-carousel v-if="banners.length" height="320px" class="banner-carousel" :interval="5000">
+      <el-carousel v-if="banners.length" :height="bannerHeight" class="banner-carousel" :interval="5000">
         <el-carousel-item v-for="(b, i) in banners" :key="i">
           <a
             class="banner-item"
@@ -155,7 +155,7 @@ import { siteConfig } from './SiteLayout.vue'
 </script>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ChatDotRound, CopyDocument, Search } from '@element-plus/icons-vue'
@@ -173,6 +173,13 @@ const latest = ref<PublicCard[]>([])
 const categories = ref<{ value: number; count: number }[]>([])
 const stats = reactive({ on_sale: 0, total: 0, categories: 0 })
 const steps = ref<{ title: string; desc: string }[]>([])
+
+// 轮播高度跟随屏幕：手机 160px / 平板 220px / 桌面 320px
+const bannerHeight = ref('320px')
+function syncBannerHeight() {
+  const w = window.innerWidth
+  bannerHeight.value = w <= 620 ? '160px' : w <= 1100 ? '220px' : '320px'
+}
 
 const points = [
   '自有货源，无中间加价，价格公开可查',
@@ -193,6 +200,8 @@ function copyWechat() {
 }
 
 onMounted(async () => {
+  syncBannerHeight()
+  window.addEventListener('resize', syncBannerHeight)
   loading.value = true
   try {
     const res = await siteApi.home()
@@ -208,6 +217,8 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+onUnmounted(() => window.removeEventListener('resize', syncBannerHeight))
 </script>
 
 <style scoped>
@@ -319,9 +330,30 @@ onMounted(async () => {
     grid-template-columns: repeat(3, 1fr);
   }
 }
-@media (max-width: 480px) {
+@media (max-width: 620px) {
   .cat-grid {
     grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-2);
+  }
+  .cat-card {
+    padding: var(--space-3);
+  }
+  .banner-item__text {
+    padding: 0 var(--space-5);
+  }
+  .banner-item__text strong {
+    font-size: var(--text-lg);
+  }
+  .banner-item__text span {
+    font-size: var(--text-sm);
+  }
+  .hero__cta {
+    width: 100%;
+  }
+  .hero__cta :deep(.el-button) {
+    flex: 1;
+    min-width: 0;
+    min-height: 46px;
   }
 }
 </style>

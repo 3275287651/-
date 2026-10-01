@@ -55,20 +55,20 @@
 
 ### 5.1 单镜像（推荐：载入即用，无需 MySQL）
 
-镜像包：`release/trademark-market-1.0.3.tar`（当前版本，含客户寄售、内容迁移、网页头品牌化、纵深防护与授权升级链路）。
-镜像 `trademark-market:1.0.3` 为**前后端一体**：内置 SQLite 数据库，前端静态资源由后端同端口托管，不依赖 MySQL / Redis / Nginx，一条 `docker run` 就能用。
-（`release/trademark-market-1.0.2.tar`、`1.0.0.tar` 为历史版本，保留用于回滚。）
+镜像包：`release/trademark-market-1.0.4.tar`（当前版本，含手机版自适应、客户寄售、内容迁移、网页头品牌化、纵深防护与授权升级链路）。
+镜像 `trademark-market:1.0.4` 为**前后端一体**：内置 SQLite 数据库，前端静态资源由后端同端口托管，不依赖 MySQL / Redis / Nginx，一条 `docker run` 就能用。
+（`release/trademark-market-1.0.3.tar`、`1.0.2.tar`、`1.0.0.tar` 为历史版本，保留用于回滚。）
 
 **方式一：双击 `载入镜像并启动.bat`** —— 自动完成「载入镜像 → 启动容器 → 打开浏览器」，并在镜像已存在时跳过重复载入。
 
 **方式二：命令行两步**
 
 ```bash
-docker load -i release/trademark-market-1.0.1.tar
+docker load -i release/trademark-market-1.0.4.tar
 
 docker run -d --name trademark -p 8080:8000 \
   -v trademark-data:/app/data -v trademark-uploads:/app/uploads \
-  --restart=always trademark-market:1.0.1
+  --restart=always trademark-market:1.0.4
 ```
 
 打开 `http://127.0.0.1:8080`，后台 `http://127.0.0.1:8080/admin/login`，默认账号 **admin / admin888**（首次启动自动创建）。
@@ -97,20 +97,20 @@ docker run -d --name trademark -p 8080:8000 \
 **升级**：改完代码后
 
 ```bash
-docker build --provenance=false --sbom=false -t trademark-market:1.0.2 .
-docker save -o release/trademark-market-1.0.2.tar trademark-market:1.0.2
+docker build --provenance=false --sbom=false --build-arg APP_VERSION=1.0.4 -t trademark-market:1.0.4 .
+docker save -o release/trademark-market-1.0.4.tar trademark-market:1.0.4
 # 服务器上：
-docker load -i trademark-market-1.0.2.tar
+docker load -i trademark-market-1.0.4.tar
 docker rm -f trademark
 docker run -d --name trademark -p 8080:8000 \
   -v trademark-data:/app/data -v trademark-uploads:/app/uploads \
-  --restart=always trademark-market:1.0.2
+  --restart=always trademark-market:1.0.4
 ```
 
 数据都在卷里，换镜像不会丢。回滚就是重新 `docker run` 上一版镜像。
 **换镜像后首次启动会自动做加法式数据库迁移**：模型里新增而老库缺失的列会被自动 `ALTER TABLE` 补上（非空列带默认值，历史行自动填），所以「新镜像 + 旧数据卷」不会因为缺列报错。结构性变更（改类型、删列、加约束）仍需人工迁移。
 
-> 小版本升级（如 1.0.1 → 1.0.2）时，记得把 `载入镜像并启动.bat` 里的 `IMAGE` 与 `TARFILE` 两行版本号一起改掉。
+> 小版本升级（如 1.0.3 → 1.0.4）时，记得把 `载入镜像并启动.bat` 里的 `IMAGE` 与 `TARFILE` 两行版本号一起改掉。
 
 **把本地已有数据搬进容器**（例如本地 SQLite 里的 1489 件商标与图样）
 
@@ -181,6 +181,7 @@ docker run --rm -v trademark-market_tm_uploads:/data -v $(pwd):/backup alpine ta
 - **客户寄售（C2B2C）**：客户在前台「我要卖标」上传自己的商标 → **商标图样与商标证两份独立材料**（商标证仅后台与提交人可见，前台不公开）→ 客户自定价 → 后台「寄售审核」通过（可改价、可直接上架）或驳回（原因必填）。审核前该商品在前台**完全不可见**（接口返回 404、不进列表与搜索）；通过并上架后才对外展示。客户可在个人中心「我的寄售」查看状态、修改后重新提交（回到待审核）或撤回。
 - **内容包迁移（镜像与内容分离）**：后台「内容迁移」一键导出 ZIP（全部业务数据 + 图样/商标证/Logo 等上传文件），在另一个实例上导入即原样恢复，实现换服务器/换镜像时内容独立搬迁；导入为「清空并整体替换」，失败自动回滚，且**不影响运营账户与操作日志**。
 - **网页头品牌化**：后台改网站名称 / Logo / 浏览器图标（favicon）后，浏览器标签页标题与图标、前台与后台各页面标题会立即跟随（配置接口禁用缓存，不用等浏览器缓存过期）。
+- **手机版自适应（前台，后台仍为 PC 版）**：四档断点 1100 / 820 / 700 / 620px。窄屏下主导航收进抽屉并内置搜索、站点名自动收敛为短名（避免「尚标易 · 商标交易…」这类省略号截断）、报价单/分享页/我的报价单三处宽表自动堆叠成卡片（不再左右拖动）、弹窗统一收敛为屏幕宽、输入框字号 ≥16px 避免 iOS 聚焦放大、筛选与分页重排、触控目标 ≥44px，并适配刘海屏安全区（`viewport-fit=cover` + `safe-area-inset`）。已用 375 / 720px 真实渲染逐页测量：无横向溢出、无文本截断、无元素重叠。
 - 安全：PBKDF2 密码哈希、JWT 令牌、角色权限校验（网站配置 / 账户管理 / 内容迁移 / 日志仅超级管理员）、图形验证码。
 
 ## 八、目录结构
@@ -213,7 +214,7 @@ docker run --rm -v trademark-market_tm_uploads:/data -v $(pwd):/backup alpine ta
 │     ├─ utils/branding.ts  网页头品牌化（标题 + favicon）
 │     └─ utils/signing.ts   请求签名（Web Crypto HMAC-SHA256 + nonce 防重放）
 ├─ Dockerfile               单镜像构建（前端构建 → 后端一体，内置 SQLite）
-├─ release/                 导出的镜像包：trademark-market-1.0.3.tar（当前）、1.0.2 / 1.0.0（回滚用）
+├─ release/                 导出的镜像包：trademark-market-1.0.4.tar（当前）、1.0.3 / 1.0.2 / 1.0.0（回滚用）
 ├─ 载入镜像并启动.bat        一键：docker load + docker run + 打开浏览器
 ├─ docker-compose.yml       多容器编排（MySQL + Nginx），见 5.2
 └─ 启动后端.bat / 启动前端.bat   本地开发用（不需要 Docker）
@@ -230,7 +231,7 @@ docker run --rm -v trademark-market_tm_uploads:/data -v $(pwd):/backup alpine ta
 | `UPLOAD_DIR` / `DATA_DIR` | backend 下 | 图片与数据目录，容器内映射到数据卷 |
 | `MAX_UPLOAD_MB` | 100 | 单文件上传上限 |
 | `CORS_ORIGINS` | 本地端口 | 前后端不同域时填写前端地址 |
-| `APP_VERSION` / `BUILD_TIME` | 1.0.3 / 空 | 版本与构建时间，后台「系统与授权」页展示 |
+| `APP_VERSION` / `BUILD_TIME` | 1.0.4 / 空 | 版本与构建时间，后台「系统与授权」页展示 |
 | `UPGRADE_KEY` | 空 | 升级清单 HMAC 签名密钥；不配则无法校验升级包 |
 | `TRUST_PROXY` | `false` | 反向代理（Nginx / 瑞数）后面部署时置 `true`，才信任 `X-Forwarded-For` |
 | `RATE_LIMIT_PER_MIN` / `RATE_LIMIT_LOGIN_PER_MIN` | 600 / 30 | 单 IP 每分钟请求上限（普通接口 / 验证码注册登录） |
@@ -346,6 +347,7 @@ location / {
 6. 限流与 nonce 防重放都是**进程内存**实现（与图形验证码同理）：单实例足够，多副本部署前需换成 Redis；否则每个副本各算一份额度。
 7. 授权与升级校验依赖环境变量中的密钥/公钥：密钥丢失可重新 `init` 并重新签发（公钥随之更换，旧授权码会失效），因此**私钥与 `UPGRADE_KEY` 请离线备份**。
 8. 请求签名（`SIGN_MODE`）启用后，任何不签名的对接方（含自带脚本）都会被拒；对外提供 API 时建议单独开一条只读通道，而不是关闭签名。
+9. 卡片与详情页的图样清晰度取决于导入图源的像素：现有 Excel 抽出的图样多为 150×150，卡片宽于 150px（桌面 4 列约 280px、平板 3 列约 210px）时会被放大。要更清晰需换更高分辨率的源图，或后续加一档 `<picture>`/多尺寸派生图。
 
 ---
 

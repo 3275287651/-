@@ -2,14 +2,14 @@
 # 商标交易平台 —— 前后端一体单镜像
 #
 # 构建（普通）：docker build --provenance=false --sbom=false \
-#                --build-arg APP_VERSION=1.0.3 -t trademark-market:1.0.3 .
+#                --build-arg APP_VERSION=1.0.4 -t trademark-market:1.0.4 .
 # 构建（加固：后端编译为二进制，镜像内不含明文 .py）：
-#       docker build --target hardened -t trademark-market:1.0.3-hardened .
-# 导出：docker save -o trademark-market-1.0.3.tar trademark-market:1.0.3
-# 部署：docker load -i trademark-market-1.0.3.tar
+#       docker build --target hardened -t trademark-market:1.0.4-hardened .
+# 导出：docker save -o trademark-market-1.0.4.tar trademark-market:1.0.4
+# 部署：docker load -i trademark-market-1.0.4.tar
 #       docker run -d --name trademark -p 8080:8000 \
 #         -v trademark-data:/app/data -v trademark-uploads:/app/uploads \
-#         trademark-market:1.0.3
+#         trademark-market:1.0.4
 #
 # 特点：内置 SQLite（无需 MySQL/Redis），前端静态资源由后端同端口托管，
 #       一条 docker run 即可使用；如需 MySQL，改 -e DATABASE_URL 即可。
@@ -34,7 +34,7 @@ RUN npx vite build
 # 仅当显式 `--target hardened` 时构建；普通构建不会走这一步（耗时长且需额外编译工具链）
 FROM python:3.12-slim AS backend-builder
 
-ARG APP_VERSION=1.0.3
+ARG APP_VERSION=1.0.4
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends gcc g++ patchelf ccache \
@@ -66,7 +66,7 @@ RUN python -m nuitka \
 # ---------- 可选阶段三：加固运行时（二进制 + 前端静态资源）----------
 FROM python:3.12-slim AS hardened
 
-ARG APP_VERSION=1.0.3
+ARG APP_VERSION=1.0.4
 ARG BUILD_TIME=""
 
 ENV PYTHONUNBUFFERED=1 \
@@ -96,7 +96,7 @@ CMD ["./trademark"]
 # ---------- 阶段四（默认）：运行时（后端 + 前端静态资源）----------
 FROM python:3.12-slim AS runtime
 
-ARG APP_VERSION=1.0.3
+ARG APP_VERSION=1.0.4
 ARG BUILD_TIME=""
 
 ENV PYTHONUNBUFFERED=1 \
@@ -106,7 +106,9 @@ ENV PYTHONUNBUFFERED=1 \
     UPLOAD_DIR=/app/uploads \
     FRONTEND_DIST=/app/frontend/dist \
     APP_VERSION=${APP_VERSION} \
-    BUILD_TIME=${BUILD_TIME}
+    BUILD_TIME=${BUILD_TIME} \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=5
 
 WORKDIR /app
 

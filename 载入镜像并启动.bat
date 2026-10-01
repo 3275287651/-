@@ -3,8 +3,8 @@ chcp 65001 >nul
 title 商标交易平台 - 载入镜像并启动
 cd /d "%~dp0"
 
-set IMAGE=trademark-market:1.0.3
-set TARFILE=release\trademark-market-1.0.3.tar
+set IMAGE=trademark-market:1.0.4
+set TARFILE=release\trademark-market-1.0.4.tar
 set PORT=8080
 set CONTAINER=trademark
 
