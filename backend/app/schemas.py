@@ -38,12 +38,13 @@ class TrademarkIn(BaseModel):
     remark: str | None = None
     status: str | None = None
     is_featured: bool | None = None
-    images: list[str] | None = None
+    images: list[str] | None = Field(default=None, description="商标图样 URL 列表")
+    certificates: list[str] | None = Field(default=None, description="商标证 URL 列表")
     extra: dict[str, Any] | None = None
 
 
 class BatchActionIn(BaseModel):
-    action: Literal["on_shelf", "off_shelf", "delete", "set_price", "adjust_price",
+    action: Literal["on_shelf", "off_shelf", "delete", "set_price", "clear_price", "adjust_price",
                     "set_status", "set_featured", "set_category"]
     ids: list[int] = Field(default_factory=list)
     # set_price
@@ -93,3 +94,32 @@ class QuoteCreateIn(BaseModel):
 
 class SettingsIn(BaseModel):
     values: dict[str, Any]
+
+
+# --------------------------------------------------------------------------- #
+# 客户寄售
+# --------------------------------------------------------------------------- #
+class SubmissionIn(BaseModel):
+    """客户寄售提交：图样与商标证是两份不同材料，分别上传。"""
+    name: str = Field(min_length=1, max_length=100)
+    category: int | None = None
+    trademark_no: str | None = Field(default=None, max_length=64)
+    registration_date: str | None = None
+    expiry_date: str | None = None
+    groups: str | None = None
+    products: str | None = None
+    legal_status: str | None = None
+    ai_description: str | None = None
+    remark: str | None = None
+    price: float | None = Field(default=None, description="期望售价，客户自定价")
+    contact_name: str | None = None
+    contact_phone: str | None = None
+    design_images: list[str] = Field(default_factory=list, description="商标图样 URL")
+    certificates: list[str] = Field(default_factory=list, description="商标证 URL")
+
+
+class SubmissionReviewIn(BaseModel):
+    action: Literal["approve", "reject"]
+    remark: str | None = None
+    price: float | None = Field(default=None, description="审核时可调整售价")
+    status: Literal["on_sale", "off_shelf", "sold", "reserved"] | None = None

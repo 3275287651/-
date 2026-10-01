@@ -51,7 +51,78 @@
 
 ---
 
-## 五、Docker 部署（含宝塔面板）
+## 五、Docker 部署
+
+### 5.1 单镜像（推荐：载入即用，无需 MySQL）
+
+镜像包：`release/trademark-market-1.0.1.tar`（当前版本，含客户寄售、内容迁移、网页头品牌化）。
+镜像 `trademark-market:1.0.1` 为**前后端一体**：内置 SQLite 数据库，前端静态资源由后端同端口托管，不依赖 MySQL / Redis / Nginx，一条 `docker run` 就能用。
+（`release/trademark-market-1.0.0.tar` 是上一版，保留用于回滚。）
+
+**方式一：双击 `载入镜像并启动.bat`** —— 自动完成「载入镜像 → 启动容器 → 打开浏览器」，并在镜像已存在时跳过重复载入。
+
+**方式二：命令行两步**
+
+```bash
+docker load -i release/trademark-market-1.0.1.tar
+
+docker run -d --name trademark -p 8080:8000 \
+  -v trademark-data:/app/data -v trademark-uploads:/app/uploads \
+  --restart=always trademark-market:1.0.1
+```
+
+打开 `http://127.0.0.1:8080`，后台 `http://127.0.0.1:8080/admin/login`，默认账号 **admin / admin888**（首次启动自动创建）。
+
+**说明**
+
+| 项目 | 说明 |
+|------|------|
+| 数据库 | 容器内 SQLite：`/app/data/trademark.db`（自动建表，无需初始化） |
+| 图样与导入文件 | `/app/uploads`（按批次分目录存放） |
+| 持久化 | 上面两个路径已声明为 docker 卷，`docker run` 里用命名卷挂载，删容器不丢数据 |
+| 开机自启 | `--restart=always`，Docker 重启后容器自动拉起 |
+| 换端口 | 把 `-p 8080:8000` 改成 `-p 80:8000`（前面可再挂宝塔/Nginx 做 HTTPS） |
+| 健康检查 | 内置 `HEALTHCHECK` 探针，`docker ps` 会显示 `(healthy)` |
+
+**可选环境变量**（在 `docker run` 上加 `-e`）
+
+| 变量 | 默认 | 用途 |
+|------|------|------|
+| `DEFAULT_ADMIN_PASSWORD` | `admin888` | 首次启动创建的管理员密码 |
+| `SECRET_KEY` | dev 占位值 | 登录令牌签名密钥，**公网部署务必自定义** |
+| `SERIAL_PREFIX` | `TM` | 唯一编号前缀（唯一编号格式 `TM-20260927-0001`） |
+| `SITE_NAME` | 尚标易 | 站点名 |
+| `DATABASE_URL` | SQLite | 想用 MySQL 时填 `mysql+pymysql://用户:密码@主机:3306/trademark?charset=utf8mb4`（镜像已内置 pymysql + cryptography 驱动，同一镜像即可切换） |
+
+**升级**：改完代码后
+
+```bash
+docker build --provenance=false --sbom=false -t trademark-market:1.0.2 .
+docker save -o release/trademark-market-1.0.2.tar trademark-market:1.0.2
+# 服务器上：
+docker load -i trademark-market-1.0.2.tar
+docker rm -f trademark
+docker run -d --name trademark -p 8080:8000 \
+  -v trademark-data:/app/data -v trademark-uploads:/app/uploads \
+  --restart=always trademark-market:1.0.2
+```
+
+数据都在卷里，换镜像不会丢。回滚就是重新 `docker run` 上一版镜像。
+**换镜像后首次启动会自动做加法式数据库迁移**：模型里新增而老库缺失的列会被自动 `ALTER TABLE` 补上（非空列带默认值，历史行自动填），所以「新镜像 + 旧数据卷」不会因为缺列报错。结构性变更（改类型、删列、加约束）仍需人工迁移。
+
+> 小版本升级（如 1.0.1 → 1.0.2）时，记得把 `载入镜像并启动.bat` 里的 `IMAGE` 与 `TARFILE` 两行版本号一起改掉。
+
+**把本地已有数据搬进容器**（例如本地 SQLite 里的 1489 件商标与图样）
+
+```bash
+docker cp backend/data/trademark.db trademark:/app/data/
+docker cp backend/uploads/trademarks/. trademark:/app/uploads/trademarks/
+docker restart trademark
+```
+
+### 5.2 多容器方案（MySQL + Nginx，docker-compose）
+
+适合需要独立数据库、多副本或已有 MySQL 运维体系的场景：
 
 ```bash
 cp .env.example .env      # 必改：SECRET_KEY、MYSQL_PASSWORD、DEFAULT_ADMIN_PASSWORD
@@ -61,14 +132,24 @@ docker compose logs -f backend
 
 访问 `http://服务器IP:8080`，后台 `http://服务器IP:8080/admin/login`。
 
-**宝塔面板步骤**：面板「Docker」→ 安装 Docker 管理器 → 上传项目目录（或用 Git 拉取）→ 复制 `.env` 并改密码 → 终端执行 `docker compose up -d --build` → 在「网站」里新建站点并反向代理到 `http://127.0.0.1:8080` → 申请 SSL 证书并开启强制 HTTPS。
-
 **编排内容**：`mysql:8.0`（utf8mb4）+ 后端（FastAPI，含 Excel 解析）+ 前端（Nginx 托管静态资源并反代 `/api`、`/media`）。
 未纳入 Redis：当前图形验证码用进程内存实现，单副本部署无需 Redis；将来扩容多副本时再引入并改造验证码存储。
 
 **数据持久化卷**：`mysql_data`（数据库）、`tm_uploads`（图样与导入文件）、`tm_data`。升级时用 `docker compose pull && docker compose up -d`，这三个卷不会丢。
 
-**备份**：
+**宝塔面板步骤**：面板「Docker」→ 安装 Docker 管理器 → 上传项目目录（或用 Git 拉取）→ 复制 `.env` 并改密码 → 终端执行 `docker compose up -d --build` → 在「网站」里新建站点并反向代理到 `http://127.0.0.1:8080` → 申请 SSL 证书并开启强制 HTTPS。
+
+### 5.3 备份
+
+单镜像方案（SQLite）：
+
+```bash
+docker cp trademark:/app/data/trademark.db backup_$(date +%F).db
+docker run --rm -v trademark-uploads:/data -v $(pwd):/backup alpine tar czf /backup/uploads_$(date +%F).tar.gz -C /data .
+```
+
+多容器方案（MySQL）：
+
 ```bash
 docker exec tm-mysql mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" trademark > backup_$(date +%F).sql
 docker run --rm -v trademark-market_tm_uploads:/data -v $(pwd):/backup alpine tar czf /backup/uploads_$(date +%F).tar.gz -C /data .
@@ -97,7 +178,10 @@ docker run --rm -v trademark-market_tm_uploads:/data -v $(pwd):/backup alpine ta
 - 数据看板：商标状态分布、未定价数量、图样总数、客户与报价单数、近 30 天访问趋势、类别与价格区间分布。
 - 前台：首页（Hero / 类别入口 / 精选 / 最新上架 / 交易流程）、商标列表（筛选 + 卡片网格 + 排序 + 分页）、详情页（字段开关受后台控制、同类别推荐）、收藏、报价单购物车（逐项调价）、生成报价单（分享链接可加访问密码 + 有效期 + 导出 Excel）、报价单分享页（密码校验 / 过期提示）。
 - 后台配置：网站基础信息、客服微信与二维码、首页轮播图（最多 5 张）、详情页字段开关、交易流程步骤、SEO、系统参数；运营账户管理（超级管理员 / 普通运营）；操作日志。
-- 安全：PBKDF2 密码哈希、JWT 令牌、角色权限校验（网站配置 / 账户管理 / 日志仅超级管理员）、图形验证码。
+- **客户寄售（C2B2C）**：客户在前台「我要卖标」上传自己的商标 → **商标图样与商标证两份独立材料**（商标证仅后台与提交人可见，前台不公开）→ 客户自定价 → 后台「寄售审核」通过（可改价、可直接上架）或驳回（原因必填）。审核前该商品在前台**完全不可见**（接口返回 404、不进列表与搜索）；通过并上架后才对外展示。客户可在个人中心「我的寄售」查看状态、修改后重新提交（回到待审核）或撤回。
+- **内容包迁移（镜像与内容分离）**：后台「内容迁移」一键导出 ZIP（全部业务数据 + 图样/商标证/Logo 等上传文件），在另一个实例上导入即原样恢复，实现换服务器/换镜像时内容独立搬迁；导入为「清空并整体替换」，失败自动回滚，且**不影响运营账户与操作日志**。
+- **网页头品牌化**：后台改网站名称 / Logo / 浏览器图标（favicon）后，浏览器标签页标题与图标、前台与后台各页面标题会立即跟随（配置接口禁用缓存，不用等浏览器缓存过期）。
+- 安全：PBKDF2 密码哈希、JWT 令牌、角色权限校验（网站配置 / 账户管理 / 内容迁移 / 日志仅超级管理员）、图形验证码。
 
 ## 八、目录结构
 
@@ -108,14 +192,23 @@ docker run --rm -v trademark-market_tm_uploads:/data -v $(pwd):/backup alpine ta
 │  │  ├─ importer.py        导入服务：分析快照 → 落库、唯一编号分配、去重更新
 │  │  ├─ exporter.py        导出（编号前置、图样内嵌可选）
 │  │  ├─ serial.py          唯一编号生成器 TM-YYYYMMDD-NNNN
-│  │  ├─ models.py          数据模型（双编号 / 可空金额 / extra 动态列）
-│  │  └─ routers/           认证、商标、导入、前台、报价单、后台杂项
+│  │  ├─ models.py          数据模型（双编号 / 可空金额 / extra 动态列 / 寄售来源与审核）
+│  │  └─ routers/           认证、商标、导入、寄售提交与审核、内容包、前台、报价单、后台杂项
 │  ├─ e2e_check.py          真实数据端到端自测（导入/双编号/检索/批量操作/导出）
-│  └─ e2e_dynamic.py        动态列 + 去重 + 覆盖更新自测
+│  ├─ e2e_dynamic.py        动态列 + 去重 + 覆盖更新自测
+│  ├─ e2e_submission.py     客户寄售全链路 + 内容包导入导出自测
+│  └─ container_check.py    容器实例业务验收（对已运行容器跑一遍完整流程）
+│                            container_check_v11.py 额外覆盖寄售审核、内容包、网页头配置
 ├─ frontend/                Vue3 + Vite + TS + Element Plus
-│  └─ src/{admin,site,api,stores,styles}
-├─ docker-compose.yml       一键部署编排
-└─ 启动后端.bat / 启动前端.bat
+│  └─ src/
+│     ├─ admin/             后台页面（含 SubmissionReview 寄售审核、ContentTransfer 内容迁移）
+│     ├─ site/              前台页面（含 SellSubmission 我要卖标）
+│     ├─ utils/branding.ts  网页头品牌化（标题 + favicon）
+├─ Dockerfile               单镜像构建（前端构建 → 后端一体，内置 SQLite）
+├─ release/                 导出的镜像包：trademark-market-1.0.1.tar（当前）、1.0.0.tar（回滚用）
+├─ 载入镜像并启动.bat        一键：docker load + docker run + 打开浏览器
+├─ docker-compose.yml       多容器编排（MySQL + Nginx），见 5.2
+└─ 启动后端.bat / 启动前端.bat   本地开发用（不需要 Docker）
 ```
 
 ## 九、环境变量

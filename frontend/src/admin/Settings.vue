@@ -42,6 +42,19 @@
                   </div>
                 </div>
               </el-form-item>
+              <el-form-item label="浏览器图标（favicon）">
+                <div class="img-field">
+                  <img v-if="values.favicon_url" :src="values.favicon_url" alt="浏览器图标" class="img-field__favicon" />
+                  <div v-else class="img-field__empty">暂无图标</div>
+                  <div class="img-field__ops">
+                    <el-upload :show-file-list="false" :http-request="uploadFavicon" accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.ico">
+                      <el-button :icon="Upload">上传图标</el-button>
+                    </el-upload>
+                    <el-button v-if="values.favicon_url" link type="danger" @click="values.favicon_url = ''">移除</el-button>
+                    <span class="hint">显示在浏览器标签页；建议 32×32 或 64×64 的方形图（PNG/SVG/ICO）。留空则使用 Logo</span>
+                  </div>
+                </div>
+              </el-form-item>
               <el-form-item label="备案号">
                 <el-input v-model="values.icp" placeholder="如 京ICP备00000000号" />
               </el-form-item>
@@ -207,6 +220,7 @@ import { ElMessage, type UploadRequestOptions } from 'element-plus'
 import { Check, Delete, Plus, Upload } from '@element-plus/icons-vue'
 import { adminApi } from '@/api'
 import { useAdminStore } from '@/stores/auth'
+import { applyBranding } from '@/utils/branding'
 
 const admin = useAdminStore()
 
@@ -290,6 +304,24 @@ async function uploadLogo(options: UploadRequestOptions) {
     options.onError?.(e as never)
   }
 }
+
+async function uploadFavicon(options: UploadRequestOptions) {
+  try {
+    const res = await adminApi.upload(options.file as File, 'favicon')
+    values.favicon_url = res.url
+    options.onSuccess?.(res)
+    // 立即应用，省得用户以为没生效
+    applyBranding({
+      site_name: values.site_name,
+      seo_home_title: values.seo_home_title,
+      logo_url: values.logo_url,
+      favicon_url: values.favicon_url,
+    })
+    ElMessage.success('图标已上传，浏览器标签页图标已更新')
+  } catch (e) {
+    options.onError?.(e as never)
+  }
+}
 async function uploadQr(options: UploadRequestOptions) {
   try {
     const res = await adminApi.upload(options.file as File, 'logo')
@@ -349,13 +381,28 @@ async function save() {
   saving.value = true
   try {
     await adminApi.saveSettings(payload)
+    // 保存后立即应用到网页头（标题 + 图标），不用刷新就能看到效果
+    applyBranding({
+      site_name: values.site_name,
+      seo_home_title: values.seo_home_title,
+      logo_url: values.logo_url,
+      favicon_url: values.favicon_url,
+    })
     ElMessage.success('配置已保存并生效')
   } finally {
     saving.value = false
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  applyBranding({
+    site_name: values.site_name,
+    seo_home_title: values.seo_home_title,
+    logo_url: values.logo_url,
+    favicon_url: values.favicon_url,
+  })
+})
 </script>
 
 <style scoped>
@@ -412,6 +459,15 @@ onMounted(load)
 .img-field__preview--qr {
   width: 100px;
   height: 100px;
+}
+.img-field__favicon {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  padding: 3px;
 }
 .img-field__empty {
   display: grid;

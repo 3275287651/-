@@ -76,7 +76,23 @@ export interface TrademarkRow {
   /** 动态列数据：Excel 里带进来、系统未预置的列 */
   extra: Record<string, unknown>
   created_at: string | null
-  images: { url: string; is_primary: boolean }[]
+  /** 全部附件（含商标证） */
+  images: { url: string; is_primary: boolean; kind: 'design' | 'certificate' }[]
+  /** 商标图样（对外展示） */
+  designs: { url: string; is_primary: boolean }[]
+  /** 商标证（仅后台与提交人可见） */
+  certificates: { url: string }[]
+  /** 来源：self=平台自有 / customer=客户寄售 */
+  source_type: 'self' | 'customer'
+  source_label: string
+  /** 审核状态：客户寄售需 approved 才可能上架 */
+  review_status: 'pending' | 'approved' | 'rejected'
+  review_label: string
+  review_remark: string | null
+  reviewed_at: string | null
+  contact_name: string | null
+  contact_phone: string | null
+  submitter: { id: number; phone: string; nickname: string } | null
 }
 
 export interface Page<T> {
@@ -147,6 +163,7 @@ export interface SiteConfig {
   site_name: string
   site_subtitle: string
   logo_url: string
+  favicon_url: string
   icp: string
   copyright: string
   contact_phone: string
@@ -358,6 +375,89 @@ export const quoteApi = {
   exportExcel: (token: string, password?: string) =>
     download(`/api/quotes/share/${token}/export`, password ? { password } : undefined, 'get',
       undefined, '商标报价单.xlsx'),
+}
+
+export interface SubmissionPayload {
+  name: string
+  category: number | null
+  trademark_no?: string | null
+  registration_date?: string | null
+  expiry_date?: string | null
+  groups?: string | null
+  products?: string | null
+  legal_status?: string | null
+  ai_description?: string | null
+  remark?: string | null
+  /** 期望售价（客户自定价） */
+  price: number | null
+  contact_name: string
+  contact_phone: string
+  /** 商标图样 URL 列表 */
+  design_images: string[]
+  /** 商标证 URL 列表（注册证扫描件，与图样是两份材料） */
+  certificates: string[]
+}
+
+export interface SubmissionCounts {
+  total: number
+  pending: number
+  approved: number
+  rejected: number
+}
+
+/** 客户侧：我要卖标（寄售） */
+export const submissionApi = {
+  /** 客户上传商标图样 / 商标证（需登录） */
+  upload: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return http.post<{ ok: boolean; url: string; size: number }>(
+      '/api/submissions/upload', fd).then((r) => r.data)
+  },
+  create: (payload: SubmissionPayload) =>
+    post<{ ok: boolean; submission: TrademarkRow; message: string }>('/api/submissions', payload),
+  mine: () => get<{ items: TrademarkRow[]; counts: SubmissionCounts }>('/api/submissions/mine'),
+  update: (id: number, payload: SubmissionPayload) =>
+    put<{ ok: boolean; submission: TrademarkRow }>(`/api/submissions/${id}`, payload),
+  withdraw: (id: number) => del<{ ok: boolean; message: string }>(`/api/submissions/${id}`),
+}
+
+/** 后台侧：寄售审核 */
+export const adminSubmissionApi = {
+  summary: () => get<SubmissionCounts & { labels: Record<string, string> }>(
+    '/api/admin/submissions/summary'),
+  list: (params: Record<string, unknown>) =>
+    get<Page<TrademarkRow>>('/api/admin/submissions', params),
+  review: (id: number, payload: { action: 'approve' | 'reject'; remark?: string; price?: number; status?: string }) =>
+    post<{ ok: boolean; submission: TrademarkRow }>(`/api/admin/submissions/${id}/review`, payload),
+  batchReview: (payload: { ids: number[]; action: 'approve' | 'reject'; remark?: string; price?: number }) =>
+    post<{ ok: boolean; affected: number }>('/api/admin/submissions/batch_review', payload),
+}
+
+/** 内容包：与镜像分离，可单独迁移 */
+export const adminContentApi = {
+  summary: () => get<{
+    counts: Record<string, number>
+    uploads: { files: number; bytes: number; megabytes: number }
+    format_version: number
+    excluded: { tables: string[]; paths: string[] }
+  }>('/api/admin/content/summary'),
+  exportZip: () => download('/api/admin/content/export', undefined, 'get', undefined,
+    `content_${new Date().toISOString().slice(0, 10)}.zip`),
+  importZip: (file: File, includeUploads = true) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return http.post<{
+      ok: boolean
+      tables: Record<string, number>
+      upload_files: number
+      source: { site?: string; exported_at?: string }
+      message: string
+    }>(`/api/admin/content/import?mode=replace&include_uploads=${includeUploads}`, fd).then((r) => r.data)
+  },
+  browse: (page = 1, pageSize = 200) =>
+    get<{ total: number; items: { path: string; size: number }[] }>(
+      '/api/admin/content/browse', { page, page_size: pageSize }),
 }
 
 export function fileUrl(url?: string | null) {

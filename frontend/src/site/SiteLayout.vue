@@ -162,6 +162,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, CopyDocument, Menu, Search, ShoppingCart, User } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
+import { applyBranding } from '@/utils/branding'
+// siteConfig / ensureSiteConfig 定义在本文件的普通 <script> 块中，两个块共享同一作用域
 
 const route = useRoute()
 const router = useRouter()
@@ -176,6 +178,7 @@ const config = siteConfig
 const navItems = [
   { path: '/', label: '首页' },
   { path: '/trademarks', label: '全部商标' },
+  { path: '/sell', label: '我要卖标' },
   { path: '/process', label: '交易流程' },
   { path: '/about', label: '关于我们' },
   { path: '/contact', label: '联系我们' },
@@ -212,7 +215,10 @@ function copyWechat() {
 }
 
 onMounted(async () => {
-  await ensureSiteConfig()
+  // 强制拉一次最新配置：后台随时可能改了站点名称/Logo/图标，
+  // 网页头（title + favicon）必须跟着变，不能吃旧缓存
+  await ensureSiteConfig(true)
+  applyBranding(config.value)
   if (user.isLoggedIn) await user.loadFavorites()
 })
 </script>

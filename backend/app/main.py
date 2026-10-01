@@ -8,14 +8,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 
 from .config import (
     CORS_ORIGINS, DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME, FRONTEND_DIST, SITE_NAME, UPLOAD_DIR,
 )
 from .database import Base, SessionLocal, engine
 from .models import Admin, ImportBatch, TrademarkColumn
-from .routers import admin_misc, auth, imports, public, quotes, trademarks
+from .routers import admin_misc, auth, content, imports, public, quotes, submissions, trademarks
 from .security import hash_password
 from .settings_store import ensure_defaults
 
@@ -23,8 +23,75 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("trademark")
 
 
+def _default_literal(col) -> str | None:
+    """取出列定义里的静态默认值，转成 SQL 字面量；动态默认值（如 datetime.now）返回 None。"""
+    d = getattr(col, "default", None)
+    if d is None or getattr(d, "is_callable", False) or getattr(d, "arg", None) is None:
+        return None
+    v = d.arg
+    if isinstance(v, bool):
+        return "1" if v else "0"
+    if isinstance(v, (int, float)):
+        return str(v)
+    return "'" + str(v).replace("'", "''") + "'"
+
+
+def _auto_migrate() -> list[str]:
+    """加法式迁移：模型里新增、老库里缺失的列自动补齐。
+
+    非空列会带上模型里声明的静态默认值一起 ALTER（SQLite / MySQL 均支持），
+    历史行会自动获得默认值，例如 source_type='self'、review_status='approved'。
+    结构性变更（改类型、删列、加约束）仍需人工迁移；长期建议引入 Alembic。
+    """
+    insp = inspect(engine)
+    added: list[str] = []
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in existing:
+                    continue
+                literal = _default_literal(col)
+                ddl = f"ALTER TABLE {table.name} ADD COLUMN {col.name} {col.type.compile(engine.dialect)}"
+                if not col.nullable:
+                    if literal is None:
+                        logger.warning("跳过非空且无静态默认值的列 %s.%s，需人工迁移",
+                                       table.name, col.name)
+                        continue
+                    ddl += f" NOT NULL DEFAULT {literal}"
+                elif literal is not None:
+                    ddl += f" DEFAULT {literal}"
+                conn.execute(text(ddl))
+                added.append(f"{table.name}.{col.name}")
+    if added:
+        logger.info("数据库自动迁移，新增列：%s", "、".join(added))
+    return added
+
+
+def _backfill_defaults() -> None:
+    """为历史数据补齐新增列的语义默认值（Python 端默认值不会作用于已有行）。"""
+    db = SessionLocal()
+    try:
+        changed = 0
+        for stmt in (
+            "UPDATE trademarks SET source_type='self' WHERE source_type IS NULL",
+            "UPDATE trademarks SET review_status='approved' WHERE review_status IS NULL",
+            "UPDATE trademark_images SET kind='design' WHERE kind IS NULL",
+        ):
+            changed += db.execute(text(stmt)).rowcount or 0
+        db.commit()
+        if changed:
+            logger.info("历史数据补齐默认值：%s 行", changed)
+    finally:
+        db.close()
+
+
 def _bootstrap() -> None:
     Base.metadata.create_all(bind=engine)
+    _auto_migrate()
+    _backfill_defaults()
     db = SessionLocal()
     try:
         ensure_defaults(db)
@@ -85,6 +152,8 @@ app.mount("/media", StaticFiles(directory=str(UPLOAD_DIR)), name="media")
 app.include_router(auth.router)
 app.include_router(trademarks.router)
 app.include_router(imports.router)
+app.include_router(submissions.router)
+app.include_router(content.router)
 app.include_router(admin_misc.router)
 app.include_router(public.router)
 app.include_router(quotes.router)

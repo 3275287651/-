@@ -26,6 +26,25 @@ STATUS_LABELS = {
     "reserved": "预留中",
 }
 
+# 商品来源：平台自有（Excel 批量导入 / 后台新增） vs 客户寄售（客户自己上传）
+SOURCE_LABELS = {
+    "self": "平台自有",
+    "customer": "客户寄售",
+}
+
+# 审核状态：平台自有商品默认免审；客户寄售需审核通过后才可能上架
+REVIEW_LABELS = {
+    "pending": "待审核",
+    "approved": "已通过",
+    "rejected": "已驳回",
+}
+
+# 附件类型：商标图样（logo 图片）与商标证（注册证扫描件）是两类不同材料，必须分开存
+IMAGE_KIND_LABELS = {
+    "design": "商标图样",
+    "certificate": "商标证",
+}
+
 
 # --------------------------------------------------------------------------- #
 # 运营账户 / 客户
@@ -94,6 +113,25 @@ class Trademark(Base):
     view_count: Mapped[int] = mapped_column(Integer, default=0)
     quote_count: Mapped[int] = mapped_column(Integer, default=0)
 
+    # ---- 来源与审核（客户寄售） ----
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True,
+        comment="寄售提交人；平台自有商品为空",
+    )
+    source_type: Mapped[str] = mapped_column(
+        String(20), default="self", index=True, comment="self=平台自有 / customer=客户寄售",
+    )
+    review_status: Mapped[str] = mapped_column(
+        String(20), default="approved", index=True, comment="pending=待审核 / approved=已通过 / rejected=已驳回",
+    )
+    review_remark: Mapped[str | None] = mapped_column(Text, nullable=True, comment="审核意见 / 驳回原因")
+    reviewer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admins.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    contact_name: Mapped[str | None] = mapped_column(String(50), nullable=True, comment="寄售联系人")
+    contact_phone: Mapped[str | None] = mapped_column(String(20), nullable=True, comment="寄售联系电话")
+
     # ---- 动态列：Excel 未预置的列原样保存 ----
     extra: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
@@ -110,6 +148,8 @@ class Trademark(Base):
     images: Mapped[list["TrademarkImage"]] = relationship(
         back_populates="trademark", cascade="all, delete-orphan", order_by="TrademarkImage.sort"
     )
+    # 寄售提交人（仅客户寄售商品有值）
+    submitter: Mapped["User | None"] = relationship(lazy="selectin", foreign_keys=[user_id])
 
     __table_args__ = (
         Index("ix_tm_status_cat", "status", "category"),
@@ -125,6 +165,10 @@ class TrademarkImage(Base):
     url: Mapped[str] = mapped_column(String(500), nullable=False)
     sort: Mapped[int] = mapped_column(Integer, default=0)
     is_primary: Mapped[bool] = mapped_column(Boolean, default=True)
+    kind: Mapped[str] = mapped_column(
+        String(20), default="design", index=True,
+        comment="design=商标图样（对外展示）/ certificate=商标证（仅后台与提交人可见）",
+    )
     source_row: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="来源 Excel 行号，便于溯源")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 

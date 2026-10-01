@@ -2,9 +2,10 @@
   <div class="login-page">
     <div class="login-card">
       <div class="login-card__head">
-        <div class="mark">标</div>
+        <img v-if="brandState.logo" :src="brandState.logo" alt="站点 Logo" class="mark mark--img" />
+        <div v-else class="mark">{{ brandState.initial }}</div>
         <div>
-          <h1>尚标易 · 运营后台</h1>
+          <h1>{{ brandState.name || '尚标易' }} · 运营后台</h1>
           <p>商标管理 · 批量导入 · 报价单运营</p>
         </div>
       </div>
@@ -36,16 +37,27 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { onMounted, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Lock, User } from '@element-plus/icons-vue'
+import { siteApi } from '@/api'
 import { useAdminStore } from '@/stores/auth'
+import { applyBranding, brandState } from '@/utils/branding'
 
 const admin = useAdminStore()
 const router = useRouter()
 const route = useRoute()
 const form = reactive({ username: 'admin', password: '' })
+
+onMounted(async () => {
+  try {
+    // 品牌跟随站点配置（响应式 brandState 驱动模板）
+    applyBranding(await siteApi.config())
+  } catch {
+    /* 配置拉取失败时用默认品牌 */
+  }
+})
 
 async function submit() {
   if (!form.username || !form.password) {
@@ -93,6 +105,12 @@ async function submit() {
   font-size: 22px;
   display: grid;
   place-items: center;
+}
+.mark--img {
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  padding: 4px;
 }
 .login-card__head h1 {
   margin: 0;

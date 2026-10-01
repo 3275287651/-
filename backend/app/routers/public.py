@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -26,11 +26,17 @@ def _status_of(tm: Trademark) -> dict:
     }.get(tm.status, tm.status)}
 
 
+def _design_images(tm: Trademark) -> list:
+    """对外只展示商标图样；商标证属于内部/提交人材料，不在前台公开。"""
+    return [im for im in (tm.images or []) if (im.kind or "design") == "design"]
+
+
 def public_card(tm: Trademark) -> dict:
     """列表卡片：不含内部唯一编号"""
-    primary = next((im.url for im in (tm.images or []) if im.is_primary), None)
-    if not primary and tm.images:
-        primary = tm.images[0].url
+    designs = _design_images(tm)
+    primary = next((im.url for im in designs if im.is_primary), None)
+    if not primary and designs:
+        primary = designs[0].url
     return {
         "id": tm.id,
         "name": tm.name,
@@ -48,6 +54,7 @@ def public_card(tm: Trademark) -> dict:
 
 def _detail(tm: Trademark, display: dict) -> dict:
     data = public_card(tm)
+    designs = _design_images(tm)
     data.update({
         "products": tm.products,
         "groups": tm.groups,
@@ -56,7 +63,7 @@ def _detail(tm: Trademark, display: dict) -> dict:
         "application_count": tm.application_count,
         "ai_description": tm.ai_description,
         "remark": tm.remark,
-        "images": [{"url": im.url, "is_primary": im.is_primary} for im in (tm.images or [])],
+        "images": [{"url": im.url, "is_primary": im.is_primary} for im in designs],
         "extra": tm.extra or {},
     })
     # 详情页字段开关（超级管理员可配）：关掉的字段不下发
@@ -67,24 +74,29 @@ def _detail(tm: Trademark, display: dict) -> dict:
 
 
 @router.get("/site/config")
-def site_config(db: Session = Depends(get_db)):
+def site_config(response: Response, db: Session = Depends(get_db)):
+    # 站点配置随时可能在后台被改动，禁止任何缓存，避免「改了标题/图标前台不变」
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return get_public(db)
 
 
 @router.get("/site/home")
-def site_home(db: Session = Depends(get_db)):
+def site_home(response: Response, db: Session = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     cfg = get_public(db)
     featured = db.execute(
-        select(Trademark).where(Trademark.is_featured.is_(True), Trademark.status == "on_sale")
+        select(Trademark).where(Trademark.is_featured.is_(True), Trademark.status == "on_sale",
+                                Trademark.review_status == "approved")
         .options(selectinload(Trademark.images)).order_by(Trademark.updated_at.desc()).limit(8)
     ).scalars().all()
     latest = db.execute(
-        select(Trademark).where(Trademark.status == "on_sale")
+        select(Trademark).where(Trademark.status == "on_sale", Trademark.review_status == "approved")
         .options(selectinload(Trademark.images)).order_by(Trademark.created_at.desc()).limit(8)
     ).scalars().all()
     cats = db.execute(
         select(Trademark.category, func.count(Trademark.id))
-        .where(Trademark.status == "on_sale", Trademark.category.is_not(None))
+        .where(Trademark.status == "on_sale", Trademark.review_status == "approved",
+               Trademark.category.is_not(None))
         .group_by(Trademark.category).order_by(func.count(Trademark.id).desc())
     ).all()
     return {
@@ -95,7 +107,8 @@ def site_home(db: Session = Depends(get_db)):
         "categories": [{"value": c, "count": n} for c, n in cats],
         "stats": {
             "on_sale": db.execute(
-                select(func.count(Trademark.id)).where(Trademark.status == "on_sale")
+                select(func.count(Trademark.id)).where(Trademark.status == "on_sale",
+                                                       Trademark.review_status == "approved")
             ).scalar() or 0,
             "total": db.execute(select(func.count(Trademark.id))).scalar() or 0,
             "categories": len(cats),
@@ -119,7 +132,8 @@ def public_list(
     page: int = 1,
     page_size: int = Query(default=24, le=96),
 ):
-    stmt = select(Trademark).where(Trademark.status == "on_sale")
+    stmt = select(Trademark).where(Trademark.status == "on_sale",
+                                   Trademark.review_status == "approved")
     if q:
         term = q.strip()
         stmt = stmt.where(or_(
@@ -163,7 +177,8 @@ def public_list(
 
     cats = db.execute(
         select(Trademark.category, func.count(Trademark.id))
-        .where(Trademark.status == "on_sale", Trademark.category.is_not(None))
+        .where(Trademark.status == "on_sale", Trademark.review_status == "approved",
+               Trademark.category.is_not(None))
         .group_by(Trademark.category).order_by(Trademark.category)
     ).all()
     pr = db.execute(
@@ -184,7 +199,8 @@ def public_list(
 @router.get("/trademarks/{tm_id}")
 def public_detail(tm_id: int, db: Session = Depends(get_db)):
     tm = db.get(Trademark, tm_id)
-    if not tm or tm.status not in ("on_sale", "reserved"):
+    # 未过审的客户寄售商品一律不可见
+    if not tm or tm.status not in ("on_sale", "reserved") or tm.review_status != "approved":
         raise HTTPException(404, "商标不存在或已下架")
     tm.view_count = (tm.view_count or 0) + 1
     db.commit()
@@ -192,6 +208,7 @@ def public_detail(tm_id: int, db: Session = Depends(get_db)):
     display = cfg.get("display_fields") or {}
     recs = db.execute(
         select(Trademark).where(Trademark.status == "on_sale", Trademark.id != tm_id,
+                                Trademark.review_status == "approved",
                                 Trademark.category == tm.category)
         .options(selectinload(Trademark.images)).limit(4)
     ).scalars().all()

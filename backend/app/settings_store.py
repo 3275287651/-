@@ -13,6 +13,7 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "site_name": "尚标易 · 商标交易平台",
     "site_subtitle": "精选现成商标 · 即买即用 · 全程代办",
     "logo_url": "",
+    "favicon_url": "",
     "icp": "京ICP备00000000号",
     "copyright": "© 2026 尚标易 商标交易平台 版权所有",
     "contact_phone": "400-000-0000",
@@ -53,7 +54,7 @@ DEFAULT_SETTINGS: dict[str, str] = {
 
 # 前台可见的配置键（其余仅在后台返回）
 PUBLIC_KEYS = {
-    "site_name", "site_subtitle", "logo_url", "icp", "copyright", "contact_phone",
+    "site_name", "site_subtitle", "logo_url", "favicon_url", "icp", "copyright", "contact_phone",
     "address", "company_intro", "service_wechat", "service_qr", "service_hours",
     "service_text", "process_steps", "display_fields", "seo_home_title",
     "seo_home_keywords", "seo_home_desc", "quote_default_days",

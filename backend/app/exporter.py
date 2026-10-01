@@ -85,9 +85,10 @@ def build_export(rows: list[Trademark], columns: list[str] | None = None,
     ws.freeze_panes = "A2"
 
     for ri, tm in enumerate(rows, start=2):
+        designs = [im for im in (tm.images or []) if (im.kind or "design") == "design"]
         for ci, (key, _, _) in enumerate(col_defs, start=1):
             if key == "__img_url":
-                urls = [im.url for im in (tm.images or [])]
+                urls = [im.url for im in designs]
                 ws.cell(row=ri, column=ci, value=";".join(urls) if urls else None)
             elif key == "__img":
                 continue
@@ -104,8 +105,8 @@ def build_export(rows: list[Trademark], columns: list[str] | None = None,
                     cell.number_format = "#,##0.00"
                 if key in ("serial_no", "trademark_no"):
                     cell.number_format = "@"   # 强制文本，防科学计数法
-        if image_mode == "embed" and tm.images:
-            _embed_image(ws, ri, col_defs, tm.images[0].url)
+        if image_mode == "embed" and designs:
+            _embed_image(ws, ri, col_defs, designs[0].url)
 
     buf = io.BytesIO()
     wb.save(buf)

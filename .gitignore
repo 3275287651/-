@@ -1,0 +1,34 @@
+﻿# ===== 依赖与构建产物（不入库）=====
+node_modules/
+frontend/dist/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ===== 运行时数据（内容，不是代码；用「内容迁移」导出包搬运）=====
+backend/data/
+backend/uploads/
+*.db
+*.db-journal
+*.sqlite3
+
+# ===== 镜像包（构建产物，体积大，用 docker save 单独分发）=====
+release/*.tar
+release/*.tar.gz
+
+# ===== 临时自测脚本与产物 =====
+backend/_*.py
+backend/_*.zip
+_export_check.xlsx
+_test_extra_columns.xlsx
+_brand_logo.png
+
+# ===== 日志与编辑器 =====
+*.log
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

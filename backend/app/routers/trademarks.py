@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..database import get_db
 from ..deps import current_admin
-from ..models import Admin, OperationLog, Trademark, TrademarkColumn, TrademarkImage
+from ..models import (
+    Admin, OperationLog, REVIEW_LABELS, SOURCE_LABELS, Trademark, TrademarkColumn, TrademarkImage,
+)
 from ..schemas import BatchActionIn, TrademarkIn
 from ..serial import next_serial
 
@@ -43,6 +45,7 @@ def _fmt_date(v) -> str | None:
 
 
 def serialize_tm(tm: Trademark, with_detail: bool = False) -> dict:
+    images = tm.images or []
     data = {
         "id": tm.id,
         # 双编号：语义不同，同时返回但字段名不同，前端分列展示
@@ -68,7 +71,25 @@ def serialize_tm(tm: Trademark, with_detail: bool = False) -> dict:
         "source_row": tm.source_row,
         "extra": tm.extra or {},
         "created_at": tm.created_at.strftime("%Y-%m-%d %H:%M") if tm.created_at else None,
-        "images": [{"url": im.url, "is_primary": im.is_primary} for im in (tm.images or [])],
+        # 附件：区分商标图样与商标证
+        "images": [{"url": im.url, "is_primary": im.is_primary, "kind": im.kind or "design"}
+                   for im in images],
+        "designs": [{"url": im.url, "is_primary": im.is_primary}
+                    for im in images if (im.kind or "design") == "design"],
+        "certificates": [{"url": im.url} for im in images if (im.kind or "design") == "certificate"],
+        # 来源与审核
+        "source_type": tm.source_type or "self",
+        "source_label": SOURCE_LABELS.get(tm.source_type or "self", "平台自有"),
+        "review_status": tm.review_status or "approved",
+        "review_label": REVIEW_LABELS.get(tm.review_status or "approved", "已通过"),
+        "review_remark": tm.review_remark,
+        "reviewed_at": tm.reviewed_at.strftime("%Y-%m-%d %H:%M") if tm.reviewed_at else None,
+        "contact_name": tm.contact_name,
+        "contact_phone": tm.contact_phone,
+        "submitter": (
+            {"id": tm.submitter.id, "phone": tm.submitter.phone, "nickname": tm.submitter.nickname}
+            if tm.submitter else None
+        ),
     }
     if not with_detail:
         data.pop("ai_description", None)
@@ -100,7 +121,8 @@ def build_columns(db: Session) -> list[dict]:
 def _apply_filters(stmt, db: Session, q: str | None, category: int | None, status: str | None,
                    price_min: float | None, price_max: float | None, price_state: str | None,
                    date_from: str | None, date_to: str | None, featured: bool | None,
-                   batch_id: int | None) -> tuple:
+                   batch_id: int | None, source_type: str | None = None,
+                   review_status: str | None = None) -> tuple:
     hints: list[str] = []
     if q:
         term = q.strip()
@@ -134,6 +156,10 @@ def _apply_filters(stmt, db: Session, q: str | None, category: int | None, statu
         stmt = stmt.where(Trademark.is_featured.is_(featured))
     if batch_id:
         stmt = stmt.where(Trademark.import_batch_id == batch_id)
+    if source_type:
+        stmt = stmt.where(Trademark.source_type == source_type)
+    if review_status:
+        stmt = stmt.where(Trademark.review_status == review_status)
     return stmt, hints
 
 
@@ -151,6 +177,8 @@ def list_trademarks(
     date_to: str | None = None,
     featured: bool | None = None,
     batch_id: int | None = None,
+    source_type: str | None = Query(default=None, description="self=平台自有 / customer=客户寄售"),
+    review_status: str | None = Query(default=None, description="pending / approved / rejected"),
     sort_by: str = "created_at",
     sort_dir: str = "desc",
     page: int = 1,
@@ -158,7 +186,8 @@ def list_trademarks(
 ):
     stmt = select(Trademark)
     stmt, hints = _apply_filters(stmt, db, q, category, status, price_min, price_max,
-                                 price_state, date_from, date_to, featured, batch_id)
+                                 price_state, date_from, date_to, featured, batch_id,
+                                 source_type, review_status)
 
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = db.execute(count_stmt).scalar() or 0
@@ -253,7 +282,7 @@ def create_trademark(payload: TrademarkIn, db: Session = Depends(get_db),
     _assign_payload(tm, payload)
     db.add(tm)
     db.flush()
-    _sync_images(db, tm, payload.images)
+    _sync_images(db, tm, payload.images, payload.certificates)
     db.add(OperationLog(admin_id=admin.id, admin_name=admin.name or admin.username,
                         action="trademark_create", target_type="trademark", target_id=tm.id,
                         detail=json.dumps({"serial_no": tm.serial_no, "name": tm.name}, ensure_ascii=False)))
@@ -275,8 +304,8 @@ def update_trademark(tm_id: int, payload: TrademarkIn, db: Session = Depends(get
         if dup:
             raise HTTPException(400, f"商标编号 {payload.trademark_no} 已被其他记录占用")
     _assign_payload(tm, payload)
-    if payload.images is not None:
-        _sync_images(db, tm, payload.images)
+    if payload.images is not None or payload.certificates is not None:
+        _sync_images(db, tm, payload.images, payload.certificates)
     db.add(OperationLog(admin_id=admin.id, admin_name=admin.name or admin.username,
                         action="trademark_update", target_type="trademark", target_id=tm.id,
                         detail=json.dumps({"serial_no": tm.serial_no}, ensure_ascii=False)))
@@ -309,12 +338,21 @@ def _assign_payload(tm: Trademark, p: TrademarkIn) -> None:
         tm.extra = p.extra
 
 
-def _sync_images(db: Session, tm: Trademark, urls: list[str] | None) -> None:
-    if urls is None:
-        return
-    db.query(TrademarkImage).filter(TrademarkImage.trademark_id == tm.id).delete()
-    for i, url in enumerate(urls):
-        db.add(TrademarkImage(trademark_id=tm.id, url=url, sort=i, is_primary=(i == 0)))
+def _sync_images(db: Session, tm: Trademark, urls: list[str] | None,
+                 certificates: list[str] | None = None) -> None:
+    """按类型分别覆盖：商标图样与商标证互不影响。"""
+    if urls is not None:
+        db.query(TrademarkImage).filter(TrademarkImage.trademark_id == tm.id,
+                                        TrademarkImage.kind == "design").delete()
+        for i, url in enumerate(urls):
+            db.add(TrademarkImage(trademark_id=tm.id, url=url, sort=i,
+                                  is_primary=(i == 0), kind="design"))
+    if certificates is not None:
+        db.query(TrademarkImage).filter(TrademarkImage.trademark_id == tm.id,
+                                        TrademarkImage.kind == "certificate").delete()
+        for i, url in enumerate(certificates):
+            db.add(TrademarkImage(trademark_id=tm.id, url=url, sort=100 + i,
+                                  is_primary=False, kind="certificate"))
 
 
 @router.delete("/{tm_id}")
@@ -370,6 +408,14 @@ def batch_action(payload: BatchActionIn, db: Session = Depends(get_db),
         for tm in rows:
             tm.price = round(float(payload.price), 2)
         detail["price"] = payload.price
+    elif payload.action == "clear_price":
+        # 清空金额：回到「源表没有价格」的状态（前台显示面议）
+        cleared = 0
+        for tm in rows:
+            if tm.price is not None:
+                tm.price = None
+                cleared += 1
+        detail["cleared"] = cleared
     elif payload.action == "adjust_price":
         if payload.adjust_mode not in ("percent", "fixed", "set"):
             raise HTTPException(400, "调价方式不合法")

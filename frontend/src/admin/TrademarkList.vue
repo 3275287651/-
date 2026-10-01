@@ -26,6 +26,15 @@
           <el-option label="已定价" value="set" />
           <el-option label="未定价" value="unset" />
         </el-select>
+        <el-select v-model="query.source_type" placeholder="来源" clearable class="filter-w-sm" @change="reload(1)">
+          <el-option label="平台自有" value="self" />
+          <el-option label="客户寄售" value="customer" />
+        </el-select>
+        <el-select v-model="query.review_status" placeholder="审核" clearable class="filter-w-sm" @change="reload(1)">
+          <el-option label="待审核" value="pending" />
+          <el-option label="已通过" value="approved" />
+          <el-option label="已驳回" value="rejected" />
+        </el-select>
         <el-button :icon="Filter" @click="advanced = !advanced">
           {{ advanced ? '收起' : '更多筛选' }}
         </el-button>
@@ -212,6 +221,25 @@
           </template>
         </el-table-column>
 
+        <el-table-column label="来源 / 审核" width="140" align="center">
+          <template #default="{ row }">
+            <div class="src-review">
+              <el-tag size="small" :type="row.source_type === 'customer' ? 'warning' : 'info'" effect="plain">
+                {{ row.source_label }}
+              </el-tag>
+              <el-tooltip
+                v-if="row.review_status !== 'approved'"
+                :content="row.review_remark || row.review_label"
+                placement="top"
+              >
+                <el-tag size="small" :type="row.review_status === 'pending' ? 'warning' : 'danger'" effect="light">
+                  {{ row.review_label }}
+                </el-tag>
+              </el-tooltip>
+            </div>
+          </template>
+        </el-table-column>
+
         <el-table-column label="操作" width="150" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="$router.push(`/admin/trademarks/${row.id}/edit`)">
@@ -252,12 +280,16 @@
             <el-radio value="set">统一设为</el-radio>
             <el-radio value="percent">按比例调整</el-radio>
             <el-radio value="fixed">统一加减</el-radio>
+            <el-radio value="clear">清空金额</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item :label="priceForm.mode === 'percent' ? '比例(%)' : '金额(元)'">
+        <el-form-item v-if="priceForm.mode !== 'clear'" :label="priceForm.mode === 'percent' ? '比例(%)' : '金额(元)'">
           <el-input-number v-model="priceForm.value" :precision="2" :step="10" class="full" />
         </el-form-item>
-        <el-alert v-if="priceForm.mode !== 'set'" type="warning" :closable="false" class="mb-0">
+        <el-alert v-if="priceForm.mode === 'clear'" type="info" :closable="false" class="mb-0">
+          把金额清空，回到「源表没有价格」的状态，前台显示为「面议」。
+        </el-alert>
+        <el-alert v-else-if="priceForm.mode !== 'set'" type="warning" :closable="false" class="mb-0">
           未定价的商标会被跳过（比例/加减需要已有金额作为基准），如需补价请用「统一设为」。
         </el-alert>
       </el-form>
@@ -317,16 +349,56 @@
         </div>
         <div class="detail__gallery">
           <el-image
-            v-for="(img, i) in detail.images"
+            v-for="(img, i) in detail.designs"
             :key="i"
             :src="img.url"
-            :preview-src-list="detail.images.map((x) => x.url)"
+            :preview-src-list="detail.designs.map((x) => x.url)"
             preview-teleported
             fit="contain"
             class="detail__img"
           />
-          <el-empty v-if="!detail.images.length" description="无图样" :image-size="60" />
+          <el-empty v-if="!detail.designs?.length" description="无商标图样" :image-size="60" />
         </div>
+
+        <!-- 商标证：客户寄售的关键审核材料，仅后台可见 -->
+        <div v-if="detail.certificates?.length" class="cert-block">
+          <div class="cert-block__head">
+            <span class="id-badge id-badge--official">商标证</span>
+            <span class="text-subtle">注册证扫描件，仅在后台与提交人处可见，前台不公开</span>
+          </div>
+          <div class="detail__gallery">
+            <el-image
+              v-for="(img, i) in detail.certificates"
+              :key="i"
+              :src="img.url"
+              :preview-src-list="detail.certificates.map((x) => x.url)"
+              preview-teleported
+              fit="contain"
+              class="detail__cert"
+            />
+          </div>
+        </div>
+
+        <!-- 客户寄售信息 -->
+        <el-alert
+          v-if="detail.source_type === 'customer'"
+          :type="detail.review_status === 'rejected' ? 'error' : detail.review_status === 'pending' ? 'warning' : 'success'"
+          :closable="false"
+          class="cust-alert"
+        >
+          <template #title>
+            客户寄售 · {{ detail.review_label }}
+            <span v-if="detail.reviewed_at" class="text-subtle">（{{ detail.reviewed_at }}）</span>
+          </template>
+          <div class="cust-alert__body">
+            <p>
+              提交人：{{ detail.submitter?.nickname || detail.contact_name || '—' }}
+              （{{ detail.submitter?.phone || detail.contact_phone || '—' }}）
+            </p>
+            <p v-if="detail.review_remark">审核意见：{{ detail.review_remark }}</p>
+            <p v-else-if="detail.review_status === 'pending'">该申请尚未审核，可在「寄售审核」页处理。</p>
+          </div>
+        </el-alert>
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="类别">{{ detail.category ? `${detail.category}类` : '—' }}</el-descriptions-item>
           <el-descriptions-item label="金额">
@@ -409,9 +481,10 @@ const query = reactive({
   q: '', category: undefined as number | undefined, status: undefined as string | undefined,
   price_state: undefined as string | undefined, price_min: undefined as number | undefined,
   price_max: undefined as number | undefined, featured: false, batch_id: undefined as number | undefined,
+  source_type: undefined as string | undefined, review_status: undefined as string | undefined,
 })
 
-/** 支持从看板 / 导入批次页带参跳转过来（如 ?price_state=unset&batch_id=3） */
+/** 支持从看板 / 导入批次页 / 寄售审核页带参跳转过来（如 ?price_state=unset&batch_id=3&review_status=pending） */
 function applyRouteQuery() {
   const qq = route.query
   if (qq.q) query.q = String(qq.q)
@@ -419,6 +492,8 @@ function applyRouteQuery() {
   if (qq.status) query.status = String(qq.status)
   if (qq.price_state) query.price_state = String(qq.price_state)
   if (qq.batch_id) query.batch_id = Number(qq.batch_id)
+  if (qq.source_type) query.source_type = String(qq.source_type)
+  if (qq.review_status) query.review_status = String(qq.review_status)
   if (qq.featured === 'true') query.featured = true
 }
 const sort = reactive({ sort_by: 'created_at', sort_dir: 'desc' })
@@ -484,6 +559,7 @@ function resetFilters() {
   Object.assign(query, {
     q: '', category: undefined, status: undefined, price_state: undefined,
     price_min: undefined, price_max: undefined, featured: false, batch_id: undefined,
+    source_type: undefined, review_status: undefined,
   })
   dateRange.value = null
   reload(1)
@@ -563,11 +639,21 @@ async function batch(action: string, extra: Record<string, unknown> = {}) {
 
 async function applyPrice() {
   const mode = priceForm.mode
-  if (mode === 'set') {
+  if (mode === 'clear') {
+    try {
+      await ElMessageBox.confirm(
+        `将把这 ${selection.value.length} 条商标的金额清空（前台显示为「面议」），确认继续吗？`,
+        '清空金额', { type: 'warning', confirmButtonText: '确认清空' },
+      )
+    } catch {
+      return
+    }
+    await batch('clear_price', {})
+  } else if (mode === 'set') {
     if (!priceForm.value || priceForm.value <= 0) return ElMessage.warning('请输入大于 0 的金额')
     await batch('set_price', { price: priceForm.value })
   } else {
-    const v = mode === 'percent' ? priceForm.value : priceForm.value
+    const v = priceForm.value
     if (!v) return ElMessage.warning('请输入调整值')
     await batch('adjust_price', { adjust_mode: mode, adjust_value: v })
   }
@@ -723,6 +809,12 @@ onMounted(() => {
 .name-link:focus-visible {
   border-bottom-color: var(--color-accent);
 }
+.src-review {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
 .copy-btn {
   cursor: pointer;
   color: var(--color-subtle-fg);
@@ -813,6 +905,31 @@ onMounted(() => {
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   background: #fff;
+}
+.detail__cert {
+  width: 200px;
+  height: 140px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #fff;
+}
+.cert-block {
+  margin-bottom: var(--space-4);
+}
+.cert-block__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+}
+.cust-alert {
+  margin-bottom: var(--space-4);
+}
+.cust-alert__body p {
+  margin: 2px 0;
+  font-size: var(--text-xs);
+  line-height: 1.7;
 }
 .long-text {
   max-height: 120px;
